@@ -30,10 +30,23 @@ def _query(bbox: str) -> str:
 out center tags;"""
 
 
+# Resale / buy-back chains and keywords — these BUY your clothes (vs donation-only thrift).
+_RESALE_HINTS = (
+    "consignment", "resale", "buy sell trade", "buy-sell-trade",
+    "plato's closet", "platos closet", "buffalo exchange", "crossroads trading",
+    "uptown cheapskate", "once upon a child", "clothes mentor", "style encore",
+    "play it again", "kid to kid", "music go round",
+)
+
+
 def _org_type(tags: dict) -> str:
-    if tags.get("shop") == "charity":
+    shop = tags.get("shop")
+    if shop == "charity":
         return "charity_store"
-    if tags.get("shop") == "second_hand":
+    if shop in ("second_hand", "consignment"):
+        name = " ".join(filter(None, (tags.get("name"), tags.get("brand"), tags.get("operator")))).lower()
+        if shop == "consignment" or tags.get("second_hand") == "no" or any(h in name for h in _RESALE_HINTS):
+            return "consignment"
         return "thrift_store"
     if tags.get("amenity") == "recycling" and ("recycling:clothes" in tags or "recycling:shoes" in tags):
         return "drop_bin"

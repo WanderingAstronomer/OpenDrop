@@ -20,7 +20,7 @@ CREATE EXTENSION IF NOT EXISTS citext;
 
 -- Enums
 CREATE TYPE org_type AS ENUM (
-  'charity_store', 'thrift_store', 'drop_bin', 'donation_center',
+  'charity_store', 'thrift_store', 'consignment', 'drop_bin', 'donation_center',
   'mutual_aid', 'church_drive', 'other'
 );
 CREATE TYPE location_status AS ENUM ('active', 'pending', 'merged', 'hidden');
