@@ -6,6 +6,7 @@ export const BUCKET_COLORS = { high: "#1a9850", medium: "#f1a340", low: "#d73027
 export const ORG_TYPE_LABELS = {
   charity_store: "Charity store",
   thrift_store: "Thrift store",
+  consignment: "Consignment / resale 💵",
   drop_bin: "Donation bin",
   donation_center: "Donation center",
   mutual_aid: "Mutual aid",
