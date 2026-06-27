@@ -25,19 +25,22 @@
 
   <div id="map-status" class="map-status" role="status" aria-live="polite" hidden></div>
 
-  <div id="legend" class="legend">
-    <strong>OpenDrop</strong>
-    <div class="legend-row"><span class="dot high"></span> High confidence</div>
-    <div class="legend-row"><span class="dot medium"></span> Medium</div>
-    <div class="legend-row"><span class="dot low"></span> Low / unverified</div>
+  <div class="map-ctl-bl">
+    <div id="legend" class="legend">
+      <strong>OpenDrop</strong>
+      <div class="legend-row"><span class="dot high"></span> High confidence</div>
+      <div class="legend-row"><span class="dot medium"></span> Medium</div>
+      <div class="legend-row"><span class="dot low"></span> Low / unverified</div>
+    </div>
+    <button id="list-toggle" class="list-toggle" type="button" aria-expanded="false" aria-controls="list-panel">☰ List</button>
   </div>
 
-  <button id="list-toggle" class="list-toggle" type="button" aria-expanded="false" aria-controls="list-panel">☰ List</button>
   <aside id="list-panel" class="list-panel" aria-label="Locations in view" aria-hidden="true">
     <div class="list-head">
       <label for="list-filter">Show</label>
       <select id="list-filter" aria-label="Filter locations by category"></select>
       <span id="list-count" class="list-count"></span>
+      <button id="list-close" class="list-close" type="button" aria-label="Close list">✕</button>
     </div>
     <ul id="list-results" class="list-results"></ul>
   </aside>

@@ -24,6 +24,7 @@ export function initList(m, onChange) {
   const toggle = document.getElementById("list-toggle");
   const panel = document.getElementById("list-panel");
   const filterSel = document.getElementById("list-filter");
+  const closeBtn = document.getElementById("list-close");
 
   filterSel.innerHTML = Object.entries(FILTERS)
     .map(([k, v]) => `<option value="${k}">${v.label}</option>`)
@@ -34,21 +35,16 @@ export function initList(m, onChange) {
     onFilterChange && onFilterChange();
   });
 
-  toggle.addEventListener("click", () => {
-    const open = panel.classList.toggle("open");
+  const setOpen = (open) => {
+    panel.classList.toggle("open", open);
     panel.setAttribute("aria-hidden", open ? "false" : "true");
     toggle.setAttribute("aria-expanded", open ? "true" : "false");
     if (open) filterSel.focus();
-  });
-  // Esc closes the panel
-  panel.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      panel.classList.remove("open");
-      panel.setAttribute("aria-hidden", "true");
-      toggle.setAttribute("aria-expanded", "false");
-      toggle.focus();
-    }
-  });
+    else toggle.focus();
+  };
+  toggle.addEventListener("click", () => setOpen(!panel.classList.contains("open")));
+  closeBtn.addEventListener("click", () => setOpen(false));
+  panel.addEventListener("keydown", (e) => { if (e.key === "Escape") setOpen(false); });
 }
 
 export function updateList(data) {
