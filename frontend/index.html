@@ -32,6 +32,16 @@
     <div class="legend-row"><span class="dot low"></span> Low / unverified</div>
   </div>
 
+  <button id="list-toggle" class="list-toggle" type="button" aria-expanded="false" aria-controls="list-panel">☰ List</button>
+  <aside id="list-panel" class="list-panel" aria-label="Locations in view" aria-hidden="true">
+    <div class="list-head">
+      <label for="list-filter">Show</label>
+      <select id="list-filter" aria-label="Filter locations by category"></select>
+      <span id="list-count" class="list-count"></span>
+    </div>
+    <ul id="list-results" class="list-results"></ul>
+  </aside>
+
   <button id="add-btn" class="add-btn" type="button" title="Add a donation location" aria-label="Add a donation location">＋ Add location</button>
 
   <div id="submit-panel" class="panel hidden" role="dialog" aria-modal="true" aria-label="Add a donation location" aria-hidden="true"></div>

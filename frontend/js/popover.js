@@ -14,7 +14,7 @@ function confHtml(d) {
     ${bucketLabel(d.bucket)} (${Math.round(d.confidence)}) · 👍 ${d.upvotes} 👎 ${d.denies}</div>`;
 }
 
-export async function openPopover(map, marker, id) {
+export async function openPopover(map, latlng, id) {
   let d;
   try {
     d = await fetchDetail(id);
@@ -31,7 +31,7 @@ export async function openPopover(map, marker, id) {
     <div class="conf-slot">${confHtml(d)}</div>
     <div class="vote-area"></div>`;
   L.popup({ minWidth: 240, maxWidth: 300, autoPan: true })
-    .setLatLng(marker.getLatLng())
+    .setLatLng(latlng)
     .setContent(div)
     .openOn(map);
   mountVote(div.querySelector(".vote-area"), d.id, (u) => {

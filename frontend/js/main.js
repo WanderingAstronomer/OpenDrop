@@ -1,5 +1,6 @@
 import { fetchLocations } from "./api.js";
 import { loadMeta } from "./config.js";
+import { getTypes, initList, updateList } from "./list.js";
 import { applyAttribution, initMap } from "./map.js";
 import { initMarkers, render } from "./markers.js";
 import { initSearch } from "./search.js";
@@ -30,8 +31,9 @@ function countFeatures(data) {
 async function refresh() {
   if (firstLoad) setStatus("Loading donation locations…");
   try {
-    const data = await fetchLocations(map.getBounds());
+    const data = await fetchLocations(map.getBounds(), "auto", getTypes());
     render(data);
+    updateList(data);
     if (countFeatures(data) > 0) {
       hasData = true;
       setStatus(null);
@@ -57,6 +59,7 @@ async function boot() {
   applyAttribution(map, meta.sources);
   initMarkers(map);
   initSearch(map);
+  initList(map, refresh);
   initSubmitPanel();
   map.on("moveend", debouncedRefresh);
   await refresh();
