@@ -1,0 +1,11 @@
+# Caddy auto-provisions and renews TLS (Let's Encrypt) for $DOMAIN, redirects HTTP→HTTPS,
+# sets HSTS, and reverse-proxies to the nginx `web` service.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	reverse_proxy web:80
+}

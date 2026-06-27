@@ -1,0 +1,59 @@
+# Production overlay. Brings TLS (Caddy + Let's Encrypt), stops publishing db/api/web
+# directly, enables APP_ENV=prod (secrets guard), adds log rotation + memory limits.
+#
+# Usage (requires Docker Compose v2.24+ for the !reset tag):
+#   cp .env.example .env   # then set strong POSTGRES_PASSWORD, IP_HASH_SALT, real
+#                          # TURNSTILE_* keys, APP_ENV=prod, DOMAIN, ACME_EMAIL
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile scheduler up -d --build
+#   bash scripts/seed.sh
+#
+# Recommended: also run deploy/app_role.sql and point the API's DATABASE_URL at opendrop_app.
+
+services:
+  db:
+    logging: &logrotate
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    deploy:
+      resources:
+        limits: { memory: 1g }
+
+  api:
+    environment:
+      APP_ENV: prod
+    ports: !reset []        # reachable only on the internal network (via web/caddy)
+    logging: *logrotate
+    deploy:
+      resources:
+        limits: { memory: 512m }
+
+  web:
+    ports: !reset []        # Caddy terminates TLS and fronts nginx
+    logging: *logrotate
+
+  scheduler:
+    environment:
+      APP_ENV: prod
+    logging: *logrotate
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env for production}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env for production}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    logging: *logrotate
+
+volumes:
+  caddy_data:
+  caddy_config:

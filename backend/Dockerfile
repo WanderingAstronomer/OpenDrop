@@ -13,5 +13,11 @@ COPY pipeline ./pipeline
 # Committed Phase-1 fixture used as the deterministic OSM fallback in pipeline.seed
 COPY research/data/osm_columbus.json ./research/data/osm_columbus.json
 
+# Run as a non-root user (defense-in-depth for a public-facing container)
+RUN useradd -r -u 10001 appuser && chown -R appuser /app
+USER appuser
+
 EXPOSE 8000
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
+  CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health',timeout=4).status==200 else 1)"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
