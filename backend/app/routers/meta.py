@@ -93,5 +93,7 @@ async def export(state: str | None = None):
         "attribution": [a["attribution"] for a in attribs],
         "features": features,
     }
-    headers = {"X-Data-Attribution": "; ".join(a["attribution"] for a in attribs)}
+    # HTTP headers must be ASCII; the in-payload `attribution` keeps the proper ©.
+    header_val = "; ".join(a["attribution"] for a in attribs).replace("©", "(c)")
+    headers = {"X-Data-Attribution": header_val.encode("ascii", "ignore").decode("ascii")}
     return JSONResponse(content=jsonable_encoder(payload), headers=headers)
