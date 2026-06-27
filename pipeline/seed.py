@@ -11,6 +11,8 @@ from .scrapers.base import load
 from .scrapers.goodwill import GoodwillScraper
 from .scrapers.planet_aid import PlanetAidScraper
 from .scrapers.salvation_army import SalvationArmyScraper
+from .scrapers.usagain import UsAgainScraper
+from .scrapers.wearable_collections import WearableCollectionsScraper
 
 
 def _try(scraper, region, conn):
@@ -33,6 +35,10 @@ def main():
         sa = _try(SalvationArmyScraper(), region, conn)
         print("== Planet Aid (ingest) ==")
         pa = _try(PlanetAidScraper(), region, conn)
+        print("== USAgain (ingest; no Ohio coverage) ==")
+        ua = _try(UsAgainScraper(), region, conn)
+        print("== Wearable Collections (ingest; NYC-only) ==")
+        wc = _try(WearableCollectionsScraper(), region, conn)
         print("== Goodwill (enrich-only; persists nothing) ==")
         gw = _try(GoodwillScraper(), region, conn)
         print("== Dedup ==")
@@ -48,6 +54,8 @@ def main():
         print("  osm        :", osm)
         print("  salv. army :", sa)
         print("  planet aid :", pa)
+        print("  usagain    :", ua)
+        print("  wearable   :", wc)
         print("  goodwill   :", gw, "(enrich-only — 0 stored)")
         print("  dedup merges:", merges, " promoted:", promoted)
         print("  locations by status:", {r["status"]: r["n"] for r in counts})

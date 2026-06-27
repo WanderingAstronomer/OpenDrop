@@ -11,6 +11,8 @@ from .regions import get_region
 from .scrapers.base import load
 from .scrapers.planet_aid import PlanetAidScraper
 from .scrapers.salvation_army import SalvationArmyScraper
+from .scrapers.usagain import UsAgainScraper
+from .scrapers.wearable_collections import WearableCollectionsScraper
 
 log = logging.getLogger("opendrop.sync")
 
@@ -20,7 +22,9 @@ def main():
     region = get_region()
     conn = db.connect()
     try:
-        for scraper in (OsmScraper(), SalvationArmyScraper(), PlanetAidScraper()):
+        scrapers = (OsmScraper(), SalvationArmyScraper(), PlanetAidScraper(),
+                    UsAgainScraper(), WearableCollectionsScraper())
+        for scraper in scrapers:
             try:
                 load(scraper, region, conn)
             except Exception as e:  # noqa: BLE001
