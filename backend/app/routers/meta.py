@@ -1,11 +1,18 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 from .. import db
 from ..config import BUCKETS, settings
+from ..geocode import search as geo_search
 
 router = APIRouter()
+
+
+@router.get("/geosearch")
+async def geosearch(q: str = Query(min_length=3, max_length=120)):
+    """Free-text place/address search (Nominatim proxy + cache) powering the map search box."""
+    return {"results": await geo_search(q.strip())}
 
 
 @router.get("/health")

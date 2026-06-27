@@ -7,6 +7,7 @@ from ..config import bucket, settings
 from ..deps import client_ip
 from ..geocode import geocode
 from ..models import SubmitIn
+from ..moderation import screen_submission
 from ..security import ip_hash, token_hash, verify_turnstile
 
 router = APIRouter()
@@ -123,9 +124,13 @@ async def submit_location(body: SubmitIn, request: Request):
     if not await verify_turnstile(body.turnstile_token, ip):
         raise HTTPException(403, {"code": "turnstile_failed", "message": "Turnstile verification failed"})
 
+    a = body.address
+    reason = screen_submission(body.name, a.line, a.city)
+    if reason:
+        raise HTTPException(422, {"code": "rejected_content", "message": reason})
+
     iph = ip_hash(ip)
     thash = token_hash(body.turnstile_token)
-    a = body.address
     state = (a.state or "").upper() or None
     bkey = brand_key(body.name)
 

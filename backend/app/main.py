@@ -14,6 +14,7 @@ logging.basicConfig(level=logging.INFO)
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    settings.assert_production_secrets()  # refuse to boot in prod with default secrets
     await db.open_pool()
     yield
     await db.close_pool()

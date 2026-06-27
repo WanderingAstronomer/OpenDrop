@@ -20,9 +20,28 @@ class Settings(BaseSettings):
     nominatim_url: str = "https://nominatim.openstreetmap.org/search"
     seed_region_bbox: str = "39.80,-83.25,40.18,-82.75"
 
+    app_env: str = "dev"  # set APP_ENV=prod to enforce the secrets guard below
+    content_denylist: str = ""  # optional comma-separated words rejected in submissions
+
     @cached_property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    def assert_production_secrets(self) -> None:
+        """In APP_ENV=prod, refuse to boot with known-insecure defaults. No-op in dev."""
+        if self.app_env.lower() != "prod":
+            return
+        problems = []
+        if self.ip_hash_salt in ("", "change-me-in-prod"):
+            problems.append("IP_HASH_SALT is unset/default (per-IP hashes become predictable)")
+        if self.turnstile_secret.startswith(("1x0000", "2x0000", "3x0000")):
+            problems.append("TURNSTILE_SECRET is a Cloudflare TEST key (bot protection disabled)")
+        if ":opendrop@" in self.database_url:
+            problems.append("DATABASE_URL still uses the default 'opendrop' password")
+        if problems:
+            raise RuntimeError(
+                "Refusing to start in production with insecure defaults:\n  - " + "\n  - ".join(problems)
+            )
 
 
 settings = Settings()
