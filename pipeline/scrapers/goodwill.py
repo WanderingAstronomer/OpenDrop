@@ -25,10 +25,6 @@ LOCATOR = "https://www.goodwill.org/locator/"
 AJAX = "https://www.goodwill.org/wp-admin/admin-ajax.php"
 _NONCE_RE = re.compile(r'nonce["\']?\s*[:=]\s*["\']([0-9a-f]{8,})["\']', re.I)
 
-# Columbus metro center; donation sites within radius.
-SEED_POINT = (39.96, -82.99)
-RADIUS_MI = 25
-
 
 class GoodwillScraper(BaseScraper):
     code = "goodwill"
@@ -39,11 +35,11 @@ class GoodwillScraper(BaseScraper):
             if not nonce:
                 log.warning("goodwill: could not harvest nonce; no records")
                 return
-            lat, lng = SEED_POINT
+            lat, lng = region.center
             try:
                 r = client.get(AJAX, params={
                     "action": "gwlf_get_locations", "security": nonce,
-                    "lat": lat, "lng": lng, "radius": RADIUS_MI, "cats": 1,
+                    "lat": lat, "lng": lng, "radius": region.radius_mi, "cats": 1,
                 })
                 r.raise_for_status()
                 body = r.json()
@@ -90,10 +86,11 @@ class GoodwillScraper(BaseScraper):
 
 def main():
     from .. import db
+    from ..regions import get_region
     logging.basicConfig(level=logging.INFO)
     conn = db.connect()
     try:
-        load(GoodwillScraper(), None, conn)
+        load(GoodwillScraper(), get_region(), conn)
     finally:
         conn.close()
 
