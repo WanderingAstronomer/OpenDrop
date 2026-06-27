@@ -1,6 +1,8 @@
 # OpenDrop — Data Model
 
-> Full PostGIS schema in SQL DDL. This is the canonical contract: every table, column, type, index, constraint, function, and trigger Phase 3 implements. The migration file [`migrations/0001_init.sql`](../migrations/) is the verbatim source of truth; this document is its annotated form. Target: **PostgreSQL 17 + PostGIS 3.6** (see [FINDINGS.md](../research/FINDINGS.md) Finding 5 / decision D3).
+> Full PostGIS schema in SQL DDL. This is the canonical contract: every table, column, type, index, constraint, function, and trigger Phase 3 implements. The migration file [`migrations/0001_init.sql`](../migrations/) is the verbatim source of truth; this document is its annotated form. Target: **PostgreSQL 17 + PostGIS 3.5** — the official non-alpine `postgis/postgis:17` image currently ships PostGIS **3.5**; PostGIS 3.6 is current upstream but its non-alpine PG17 image is not yet published, and OpenDrop's schema uses **no 3.6-only feature** (all spatial functions used exist since PostGIS ≤3.0). See [FINDINGS.md](../research/FINDINGS.md) Finding 5 / decision D3.
+
+> **Migration mechanism:** `0001_init.sql` contains plain (non-idempotent) `CREATE` statements — `CREATE TYPE … AS ENUM` has no `IF NOT EXISTS` form, so the file is **applied exactly once**, tracked by a ledger. `scripts/migrate.sh` first ensures `CREATE TABLE IF NOT EXISTS schema_migrations(version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`, then applies each `NNNN_*.sql` whose `version` is absent and records it — so re-running is a no-op without requiring self-idempotent DDL. On first container boot the Postgres `initdb` mount applies `0001_init.sql` directly; `migrate.sh` is for existing databases.
 
 ## Design principles (traceable to Phase 1)
 
@@ -87,11 +89,13 @@ CREATE TABLE locations (
   name             text        NOT NULL,
   org_type         org_type    NOT NULL DEFAULT 'other',
   org_name         text,                              -- brand/operator: 'Goodwill','The Salvation Army'
+  brand_key        text,                              -- canonicalized brand token for dedup (see §7.5/ARCH §7.4); NULL = unbranded
 
   -- Structured address (any may be NULL; OSM gives ~36% coverage)
   address_line     text,
+  house_number     text,                              -- leading house-number token parsed from address (dedup tier-2)
   city             text,
-  state            char(2),                           -- USPS 2-letter
+  state            varchar(2),                        -- USPS 2-letter (varchar, not char — avoids blank-pad/regex footgun)
   postal_code      text,
 
   -- Hours: normalized structure + original string (OSM collection_times is 0%, so mostly NULL)
@@ -136,7 +140,11 @@ CREATE INDEX locations_state_ix      ON locations (state);
 CREATE INDEX locations_org_type_ix   ON locations (org_type);
 CREATE INDEX locations_name_trgm_ix  ON locations USING gin (normalize_name(name) gin_trgm_ops);
 CREATE INDEX locations_active_geom_gix ON locations USING gist (geom) WHERE status = 'active';
+CREATE INDEX locations_brand_key_ix  ON locations (brand_key) WHERE brand_key IS NOT NULL;
 ```
+
+**Field-provenance invariant (redistribution safety — defense in depth for D1/D2).**
+Canonical display columns (`name, org_name, brand_key, address_*, house_number, city, state, postal_code, hours, hours_raw, accepted_items, phone, website`) may be written **only** from an `ingest`-policy `location_sources` record, choosing the value from the contributing source with the highest `authority_weight` (then most-recent `last_seen_at`). The loader/merge logic must **never** write a canonical column from an `enrich_only` record. This closes the *field-level* leak that the row-level `is_redistributable` flag cannot catch (a row with both ingest and enrich sources is `is_redistributable=true`, so only this invariant prevents an enrich value from riding out via `v_public_locations`). A Phase-3 test asserts it.
 
 **Notes**
 - `geom` is SRID 4326 (WGS84). Distance checks use `geography` casts (`ST_DWithin(geom::geography, …, 300)`) so thresholds are in **meters** without a projected SRID. (Matches the dedup spec's metric thresholds.)
@@ -195,7 +203,7 @@ Append-only design preserves vote history for future abuse analysis without bloc
 
 ## 5. `pending_locations` — crowd-submitted intake queue
 
-New community submissions land here first (never directly into `locations`). A promotion step (see §7 lifecycle) geocodes, dedup-checks, and either promotes them into `locations` (as `crowd` source) or marks them `duplicate`/`rejected`.
+New community submissions land here first (never directly into `locations`). The **promotion step** (lifecycle §8 here; mechanism in [ARCHITECTURE §7.6](ARCHITECTURE.md)) geocodes, dedup-checks, and either promotes them into `locations` (creating a `crowd` `location_sources` row, `status='promoted'`, `promoted_location_id` set) or marks them `duplicate`/`rejected`.
 
 ```sql
 CREATE TABLE pending_locations (
@@ -204,7 +212,7 @@ CREATE TABLE pending_locations (
   org_type            org_type NOT NULL DEFAULT 'other',
   address_line        text,
   city                text,
-  state               char(2),
+  state               varchar(2),
   postal_code         text,
   geom                geometry(Point, 4326),       -- geocoded on submit; NULL => needs review
   submitter_ip_hash   text     NOT NULL,
@@ -276,9 +284,10 @@ DECLARE
   v_redist boolean;
   v_lastv  timestamptz;
 BEGIN
-  -- Source component: sum authority of distinct INGEST sources (enrich_only excluded entirely)
+  -- Source component: sum authority of distinct INGEST sources (enrich_only excluded entirely).
+  -- v_redist = "has >= 1 ingest source" (the join already filters to ingest, so COUNT(*)>0 says it).
   SELECT COALESCE(LEAST(85, SUM(s.authority_weight)), 0),
-         bool_or(s.storage_policy = 'ingest')
+         COUNT(*) > 0
     INTO v_source, v_redist
   FROM (SELECT DISTINCT ls.source_code FROM location_sources ls WHERE ls.location_id = p_location_id) d
   JOIN sources s ON s.code = d.source_code AND s.storage_policy = 'ingest';
@@ -296,6 +305,15 @@ BEGIN
              END;
 
   v_conf := GREATEST(0, LEAST(100, v_source + v_crowd - v_stale));
+
+  -- Community deny-dominance override: a clear deny majority retires ANY location,
+  -- regardless of source authority. Without this, a deduped multi-source row
+  -- (source_component up to 85) could never fall below DISPLAY_FLOOR since crowd
+  -- is floored at -40 (85-40=45). Threshold needs distinct ip-hashes (cooldown-gated),
+  -- so it resists casual single-actor abuse while still letting the crowd take down dead spots.
+  IF v_dn >= 5 AND v_dn >= v_up + 5 THEN
+    v_conf := LEAST(v_conf, 20);   -- force below DISPLAY_FLOOR; keeps score coherent with 'pending'
+  END IF;
 
   UPDATE locations
      SET confidence = round(v_conf, 2),
@@ -334,7 +352,9 @@ DECLARE v_id bigint := COALESCE(NEW.location_id, OLD.location_id);
 BEGIN
   UPDATE locations l SET
      source_count = (SELECT count(DISTINCT source_code) FROM location_sources WHERE location_id = v_id),
-     last_verified_at = GREATEST(COALESCE(l.last_verified_at, to_timestamp(0)),
+     -- GREATEST() skips NULLs, so when v_id has no remaining sources this keeps the prior
+     -- last_verified_at (never invents a 1970/epoch timestamp -> never a phantom -20 staleness).
+     last_verified_at = GREATEST(l.last_verified_at,
                                  (SELECT max(last_seen_at) FROM location_sources WHERE location_id = v_id))
    WHERE l.id = v_id;
   PERFORM recompute_confidence(v_id);
@@ -346,10 +366,12 @@ CREATE TRIGGER location_sources_after_write
   FOR EACH ROW EXECUTE FUNCTION trg_after_source();
 ```
 
-**Worked example (Phase 4 manual-test compatibility):**
-- An active Salvation Army-fed location: source 50, 0 votes, fresh → confidence **50** → `active` (medium bucket).
-- Deny it 5× (5 distinct IP-hashes): crowd = `−8·5 = −40` → confidence `50 − 40 = 10` → `< 25` → status flips to **`pending`** (hidden). ✓ Directive Phase 4 step 2.
-- Upvote a location once: crowd `+5` → confidence rises, `last_verified_at` refreshed. ✓ Directive Phase 4 step 2 (score updates).
+**Worked examples (Phase 4 manual-test compatibility).** All absolute numbers below assume `last_verified_at = now()` (a freshly ingested/verified row, `staleness = 0`); staleness reduces the absolute confidence over time but does **not** change any of the status outcomes below.
+
+- *Single-source.* An active Salvation-Army-only location: source 50, 0 votes, fresh → confidence **50** → `active` (medium bucket).
+  - Deny it **4×** (4 distinct IP-hashes — 4 is the true minimum): crowd = `max(−40, −8·4) = −32` → confidence `50 − 32 = 18` → `< 25` → status flips to **`pending`** (hidden). ✓ Directive Phase 4 step 2.
+- *Multi-source (what the seed actually produces after dedup).* A deduped OSM(40)+Salvation Army(50) location: source = `min(85, 90) = 85` → confidence **85** → `active` (high bucket). Denies alone cap crowd at −40 (85−40 = 45, still active) — so the **deny-dominance override** is what retires it: **5 denies** with 0 confirms satisfies `denies≥5 AND denies≥confirms+5` → confidence floored to ≤20 → **`pending`**. ✓ This is the location the Phase-4 deny test should target; the seed log identifies a multi-source row for the tester.
+- *Upvote → score updates.* A confirm vote sets `last_verified_at = now()` (zeroing staleness) **and** adds `+5` crowd, so confidence visibly **rises** even against a previously-stale row — the freshness refresh guarantees the directive's "score updates" assertion can't be masked by accumulated staleness. ✓ Directive Phase 4 step 2.
 
 ---
 
