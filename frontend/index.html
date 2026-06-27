@@ -4,13 +4,20 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>OpenDrop — US clothing donation map</title>
+  <meta name="description" content="OpenDrop is a community-owned, open-data map of clothing donation locations across the United States — drop bins, thrift stores, mutual aid closets, and church drives." />
+  <meta name="theme-color" content="#15616d" />
+  <meta property="og:title" content="OpenDrop — US clothing donation map" />
+  <meta property="og:description" content="Find and verify clothing donation locations near you. Community-owned open data." />
+  <meta property="og:type" content="website" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin="" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin="" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
-  <div id="map"></div>
+  <div id="map" role="application" aria-label="Map of clothing donation locations"></div>
+
+  <div id="map-status" class="map-status" role="status" aria-live="polite" hidden></div>
 
   <div id="legend" class="legend">
     <strong>OpenDrop</strong>
@@ -19,10 +26,16 @@
     <div class="legend-row"><span class="dot low"></span> Low / unverified</div>
   </div>
 
-  <button id="add-btn" class="add-btn" title="Add a donation location">＋ Add location</button>
+  <button id="add-btn" class="add-btn" type="button" title="Add a donation location" aria-label="Add a donation location">＋ Add location</button>
 
-  <div id="submit-panel" class="panel hidden" aria-hidden="true"></div>
-  <div id="toast-host" class="toast-host"></div>
+  <div id="submit-panel" class="panel hidden" role="dialog" aria-modal="true" aria-label="Add a donation location" aria-hidden="true"></div>
+  <div id="toast-host" class="toast-host" role="status" aria-live="polite"></div>
+
+  <noscript>
+    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:system-ui,sans-serif;background:#fff;z-index:3000">
+      OpenDrop is an interactive map and needs JavaScript enabled to display donation locations.
+    </div>
+  </noscript>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>

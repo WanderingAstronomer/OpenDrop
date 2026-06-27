@@ -20,16 +20,20 @@ export function initMap() {
     { maxZoom: 19, attribution: "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community" }
   );
 
-  const map = L.map("map", { zoomControl: true, layers: [streetsLight] })
+  const bases = { "Streets (light)": streetsLight, "Streets (detailed)": streetsDetailed, Satellite: satellite };
+
+  let saved = null;
+  try { saved = localStorage.getItem("opendrop_basemap"); } catch (e) { /* private mode */ }
+  const initial = bases[saved] || streetsLight;
+
+  const map = L.map("map", { zoomControl: true, layers: [initial] })
     .setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
 
-  L.control
-    .layers(
-      { "Streets (light)": streetsLight, "Streets (detailed)": streetsDetailed, Satellite: satellite },
-      {},
-      { position: "topright", collapsed: false }
-    )
-    .addTo(map);
+  L.control.layers(bases, {}, { position: "topright", collapsed: false }).addTo(map);
+
+  map.on("baselayerchange", (e) => {
+    try { localStorage.setItem("opendrop_basemap", e.name); } catch (err) { /* ignore */ }
+  });
 
   return map;
 }

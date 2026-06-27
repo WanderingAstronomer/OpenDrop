@@ -14,20 +14,25 @@ function optionsHtml() {
   return ORG_TYPES.map((t) => `<option value="${t}">${ORG_TYPE_LABELS[t]}</option>`).join("");
 }
 
+function onKeydown(e) {
+  if (e.key === "Escape") closePanel(document.getElementById("submit-panel"));
+}
+
 function openPanel(panel) {
   token = null;
-  panel.innerHTML = `<h2>Add a donation location</h2>
-    <label>Name</label><input id="f-name" placeholder="e.g. St. Mark's clothing closet" />
-    <label>Type</label><select id="f-type">${optionsHtml()}</select>
-    <label>Street address</label><input id="f-line" placeholder="123 Main St" />
+  panel.innerHTML = `<h2 tabindex="-1">Add a donation location</h2>
+    <label for="f-name">Name</label><input id="f-name" autocomplete="organization" placeholder="e.g. St. Mark's clothing closet" />
+    <label for="f-type">Type</label><select id="f-type">${optionsHtml()}</select>
+    <label for="f-line">Street address</label><input id="f-line" autocomplete="address-line1" placeholder="123 Main St" />
     <div class="row">
-      <div><label>City</label><input id="f-city" /></div>
-      <div><label>State</label><input id="f-state" maxlength="2" placeholder="OH" /></div>
-      <div><label>ZIP</label><input id="f-zip" /></div>
+      <div><label for="f-city">City</label><input id="f-city" autocomplete="address-level2" /></div>
+      <div><label for="f-state">State</label><input id="f-state" maxlength="2" autocomplete="address-level1" placeholder="OH" /></div>
+      <div><label for="f-zip">ZIP</label><input id="f-zip" inputmode="numeric" autocomplete="postal-code" pattern="\\d{5}(-\\d{4})?" /></div>
     </div>
     <div class="ts" style="margin-top:10px"></div>
-    <div class="actions"><button class="primary" id="f-submit">Submit</button><button class="ghost" id="f-cancel">Cancel</button></div>`;
+    <div class="actions"><button class="primary" id="f-submit" type="button">Submit</button><button class="ghost" id="f-cancel" type="button">Cancel</button></div>`;
   panel.classList.remove("hidden");
+  panel.setAttribute("aria-hidden", "false");
 
   const tsEl = panel.querySelector(".ts");
   if (window.turnstile && META && META.turnstile_sitekey) {
@@ -39,11 +44,17 @@ function openPanel(panel) {
   }
   panel.querySelector("#f-cancel").onclick = () => closePanel(panel);
   panel.querySelector("#f-submit").onclick = () => doSubmit(panel);
+  document.addEventListener("keydown", onKeydown);
+  panel.querySelector("#f-name").focus(); // move focus into the dialog
 }
 
 function closePanel(panel) {
   panel.classList.add("hidden");
+  panel.setAttribute("aria-hidden", "true");
   panel.innerHTML = "";
+  document.removeEventListener("keydown", onKeydown);
+  const addBtn = document.getElementById("add-btn");
+  if (addBtn) addBtn.focus(); // restore focus to the trigger
 }
 
 function val(panel, sel) {
