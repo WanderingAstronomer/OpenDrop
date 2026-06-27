@@ -1,8 +1,9 @@
 import { API } from "./config.js";
 
-export async function fetchLocations(bounds, cluster = "auto") {
+export async function fetchLocations(bounds, cluster = "auto", types = null) {
   const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
   const params = new URLSearchParams({ bbox: bbox.join(","), cluster });
+  if (types) params.set("types", types);
   const r = await fetch(`${API}/locations?${params.toString()}`);
   if (!r.ok) throw await r.json().catch(() => ({}));
   return r.json();

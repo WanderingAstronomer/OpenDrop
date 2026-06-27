@@ -55,7 +55,7 @@ export function render(data) {
     const marker = L.circleMarker([lat, lon], {
       radius: 7, weight: 2, color: "#ffffff", fillColor: bucketColor(p.bucket), fillOpacity: 1,
     });
-    marker.on("click", () => openPopover(map, marker, p.id));
+    marker.on("click", () => openPopover(map, marker.getLatLng(), p.id));
     clusterGroup.addLayer(marker);
   });
 }

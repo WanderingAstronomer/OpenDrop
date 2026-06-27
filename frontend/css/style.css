@@ -106,8 +106,36 @@ html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, "Se
 .satellite-active .legend .legend-row,
 .satellite-active .popover .meta { color: #1f2933; }
 
+/* Accessible list view (keyboard + screen-reader path to every location) */
+.list-toggle {
+  position: absolute; top: 108px; left: 12px; z-index: 1000;
+  background: #fff; border: 1px solid #cbd2d9; border-radius: 8px; padding: 7px 12px;
+  font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow);
+}
+.list-toggle:hover { background: #f5f7fa; }
+.list-panel {
+  position: absolute; top: 0; left: 0; bottom: 0; z-index: 1300; width: min(340px, 85vw);
+  background: #fff; box-shadow: var(--shadow); transform: translateX(-100%);
+  transition: transform 0.2s ease; display: flex; flex-direction: column;
+}
+.list-panel.open { transform: translateX(0); }
+.list-head { display: flex; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid #eef1f4; }
+.list-head label { font-size: 13px; color: #52606d; }
+.list-head select { flex: 1; padding: 6px; border: 1px solid #cbd2d9; border-radius: 7px; font-size: 13px; }
+.list-count { font-size: 12px; color: #7b8794; white-space: nowrap; }
+.list-results { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; }
+.list-empty { padding: 16px; color: #7b8794; font-size: 13px; text-align: center; }
+.list-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: none; border: none; border-radius: 8px; padding: 8px 10px; cursor: pointer; font-size: 13px;
+}
+.list-item:hover, .list-item:focus { background: #eef4fb; outline: 2px solid #2b6cb0; outline-offset: -2px; }
+.li-name { font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.li-type { color: #7b8794; font-size: 11.5px; white-space: nowrap; }
+
 /* Respect users who prefer reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .toast { transition: opacity 0.01ms; }
+  .list-panel { transition: none; }
   html { scroll-behavior: auto; }
 }
