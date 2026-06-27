@@ -17,6 +17,12 @@
 <body>
   <div id="map" role="application" aria-label="Map of clothing donation locations"></div>
 
+  <div id="search" class="search">
+    <input id="search-input" type="search" placeholder="Search a city or address…"
+           autocomplete="off" aria-label="Search for a place or address" />
+    <ul id="search-results" class="search-results" role="listbox" aria-label="Search results"></ul>
+  </div>
+
   <div id="map-status" class="map-status" role="status" aria-live="polite" hidden></div>
 
   <div id="legend" class="legend">

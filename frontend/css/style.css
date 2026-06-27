@@ -72,13 +72,39 @@ html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, "Se
 }
 .odc-cluster:hover { background: #1d7a8c; }
 
-/* Loading / empty / error banner over the map */
+/* Search box (top-center) */
+.search { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1200; width: min(380px, calc(100vw - 130px)); }
+.search input {
+  width: 100%; padding: 10px 14px; border: 1px solid #cbd2d9; border-radius: 22px;
+  font-size: 14px; box-shadow: var(--shadow); background: #fff; outline: none;
+}
+.search input:focus { border-color: #2b6cb0; box-shadow: 0 0 0 2px rgba(43,108,176,.25), var(--shadow); }
+.search-results {
+  list-style: none; margin: 6px 0 0; padding: 4px; background: #fff; border-radius: 10px;
+  box-shadow: var(--shadow); max-height: 50vh; overflow-y: auto;
+}
+.search-results:empty { display: none; }
+.search-results li { padding: 8px 10px; border-radius: 7px; font-size: 13px; cursor: pointer; }
+.search-results li[data-pick]:hover, .search-results li[data-pick]:focus { background: #eef4fb; outline: none; }
+.search-results li.empty { color: #7b8794; cursor: default; }
+
+/* Loading / empty / error banner — sits just below the search box */
 .map-status {
-  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1100;
+  position: absolute; top: 64px; left: 50%; transform: translateX(-50%); z-index: 1100;
   background: rgba(31, 41, 51, 0.92); color: #fff; padding: 8px 16px; border-radius: 20px;
   font-size: 13px; box-shadow: var(--shadow); max-width: 80vw; text-align: center;
 }
 .map-status[hidden] { display: none; }
+
+/* "Use my location" control glyph */
+.odc-locate { font-size: 18px; font-weight: 700; line-height: 26px; text-align: center; color: #2b6cb0; }
+
+/* Stronger separation for white chrome over dark satellite imagery */
+.satellite-active .legend,
+.satellite-active .search input,
+.satellite-active .panel { border: 1px solid rgba(0, 0, 0, 0.3); box-shadow: 0 2px 16px rgba(0, 0, 0, 0.5); }
+.satellite-active .legend .legend-row,
+.satellite-active .popover .meta { color: #1f2933; }
 
 /* Respect users who prefer reduced motion */
 @media (prefers-reduced-motion: reduce) {
