@@ -80,4 +80,22 @@ docker compose run --rm api pytest -q
 - **Google Places / Foursquare** are never stored — query-time enrichment only.
 - No accounts; abuse is gated by Turnstile + per-IP cooldowns (good-enough, not adversarially hardened).
 
-> Status: local development instance. Production deployment (single VPS, e.g. Hetzner CX22) is configured but not deployed — that needs live credentials.
+## Production deployment
+
+A production overlay adds TLS, stops publishing internal ports, and turns on the secrets guard:
+
+```bash
+cp .env.example .env
+# set: APP_ENV=prod, a strong POSTGRES_PASSWORD + IP_HASH_SALT (openssl rand -hex 24),
+#      real Cloudflare TURNSTILE_SECRET/SITEKEY, and DOMAIN + ACME_EMAIL
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile scheduler up -d --build
+bash scripts/seed.sh
+```
+
+- **TLS:** Caddy auto-provisions/renews Let's Encrypt certs for `DOMAIN`, redirects HTTP→HTTPS, sets HSTS, and proxies to nginx. (Requires Docker Compose ≥ 2.24 for the `!reset` tag.)
+- **Secrets guard:** with `APP_ENV=prod`, the API refuses to boot if `IP_HASH_SALT`, the DB password, or the Turnstile secret are still defaults.
+- **Least-privilege DB:** run [`deploy/app_role.sql`](deploy/app_role.sql) and point the API's `DATABASE_URL` at `opendrop_app` (no DDL/DELETE); keep the owner role for migrations + the scheduler.
+- **Freshness:** the `scheduler` profile re-syncs sources daily (`SYNC_INTERVAL_SECONDS`), which also runs closure-detection.
+- **Backups:** `bash scripts/backup.sh` (gzipped `pg_dump`) / `bash scripts/restore.sh <dump>`. Note: `docker compose down -v` **wipes the database volume** — back up first.
+
+> Recommended VPS: Hetzner CX22 (2 vCPU / 4 GB) or a DigitalOcean 2 GB droplet.
