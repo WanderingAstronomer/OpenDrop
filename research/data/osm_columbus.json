@@ -1,0 +1,656 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.11 87bfad18",
+  "osm3s": {
+    "timestamp_osm_base": "2026-06-27T19:16:29Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+
+{
+  "type": "node",
+  "id": 3643093117,
+  "lat": 40.0374087,
+  "lon": -82.9991702,
+  "tags": {
+    "addr:city": "Columbus",
+    "addr:housenumber": "3620",
+    "addr:postcode": "43214",
+    "addr:state": "OH",
+    "addr:street": "Indianola Avenue",
+    "name": "Volunteers of America Thrift Store",
+    "shop": "second_hand"
+  }
+},
+{
+  "type": "node",
+  "id": 3660709524,
+  "lat": 40.0596844,
+  "lon": -83.0194253,
+  "tags": {
+    "name": "In Review",
+    "shop": "second_hand"
+  }
+},
+{
+  "type": "node",
+  "id": 3819972839,
+  "lat": 40.0728614,
+  "lon": -83.1274859,
+  "tags": {
+    "amenity": "recycling",
+    "recycling:clothes": "yes",
+    "recycling_type": "container"
+  }
+},
+{
+  "type": "node",
+  "id": 5469202751,
+  "lat": 39.9447531,
+  "lon": -82.9830784,
+  "tags": {
+    "amenity": "recycling",
+    "recycling:clothes": "yes",
+    "recycling_type": "container"
+  }
+},
+{
+  "type": "node",
+  "id": 6916850536,
+  "lat": 39.9726900,
+  "lon": -82.8949224,
+  "tags": {
+    "brand": "Goodwill",
+    "brand:wikidata": "Q5583655",
+    "name": "Goodwill",
+    "shop": "charity"
+  }
+},
+{
+  "type": "node",
+  "id": 6967766148,
+  "lat": 39.9544969,
+  "lon": -83.1171334,
+  "tags": {
+    "name": "Ohio Thrift",
+    "shop": "second_hand"
+  }
+},
+{
+  "type": "node",
+  "id": 6967820451,
+  "lat": 39.9441812,
+  "lon": -83.0386745,
+  "tags": {
+    "name": "Ohio Thrift Store",
+    "shop": "second_hand"
+  }
+},
+{
+  "type": "node",
+  "id": 6978411936,
+  "lat": 40.0400932,
+  "lon": -82.9624973,
+  "tags": {
+    "addr:city": "Columbus",
+    "addr:housenumber": "3551",
+    "addr:postcode": "43224",
+    "addr:state": "OH",
+    "addr:street": "Cleveland Avenue",
+    "name": "Ohio Thrift Store",
+    "shop": "second_hand"
+  }
+},
+{
+  "type": "node",
+  "id": 7968410933,
+  "lat": 39.9869575,
+  "lon": -83.0052696,
+  "tags": {
+    "addr:city": "Columbus",
+    "addr:housenumber": "1204",
+    "addr:postcode": "43201",
+    "addr:state": "OH",
+    "addr:street": "North High Street",
+    "name": "Dress for Success",
+    "phone": "+1-614-680-3491",
+    "shop": "charity",
+    "website": "https://columbus.dressforsuccess.org/"
+  }
+},
+{
+  "type": "node",
+  "id": 8040139079,
+  "lat": 39.9872811,
+  "lon": -83.0052777,
+  "tags": {
+    "addr:city": "Columbus",
+    "addr:housenumber": "1230",
+    "addr:postcode": "43201",
+    "addr:state": "OH",
+    "addr:street": "North High Street",
+    "contact:facebook": "OutoftheClosetThriftStores",
+    "name": "Out of the Closet",
+    "opening_hours": "Su 10:00-18:00; Mo-Sa 10:00-19:00",
+    "shop": "charity",
+    "website": "https://outofthecloset.org/locations/columbus-thrift-store/"
+  }
+},
+{
+  "type": "node",
+  "id": 9115712797,
+  "lat": 39.9283367,
+  "lon": -82.7898791,
+  "tags": {
+    "branch": "(Permanently Closed)",
+    "brand": "Goodwill",
+    "brand:wikidata": "Q5583655",
+    "name": "Goodwill",
+    "operator": "Goodwill Columbus",
+    "operator:wikidata": "Q126844141",
+    "shop": "charity"
+  }
+},
+{
+  "type": "node",
+  "id": 9787010127,
+  "lat": 39.9540236,
+  "lon": -82.8242830,
+  "tags": {
+    "name": "HEART Mid-Ohio Food Bank",
+    "shop": "charity"
+  }
+},
+{
+  "type": "node",
+  "id": 9812853769,
+  "lat": 40.0102913,
+  "lon": -82.8653066,
+  "tags": {
+    "brand": "Goodwill",
+    "brand:wikidata": "Q5583655",
+    "name": "Goodwill",
+    "shop": "charity"
+  }
+},
+{
+  "type": "node",
+  "id": 12624136681,
+  "lat": 39.9850333,
+  "lon": -83.0404478,
+  "tags": {
+    "amenity": "recycling",
+    "operator": "Ohio Clothing Recycling",
+    "recycling:clothes": "yes",
+    "recycling_type": "container"
+  }
+},
+{
+  "type": "node",
+  "id": 13347186957,
+  "lat": 39.9951353,
+  "lon": -83.0087341,
+  "tags": {
+    "name": "Buckeye Bargains",
+    "shop": "second_hand"
+  }
+},
+{
+  "type": "way",
+  "id": 233544569,
+  "center": {
+    "lat": 40.0641636,
+    "lon": -83.0865703
+  },
+  "tags": {
+    "addr:city": "Columbus",
+    "addr:housenumber": "2136",
+    "addr:state": "OH",
+    "addr:street": "Bethel Road",
+    "alt_name": "ReStore",
+    "brand": "Habitat for Humanity ReStore",
+    "brand:wikidata": "Q108414596",
+    "building": "yes",
+    "name": "Habitat for Humanity ReStore",
+    "second_hand": "yes",
+    "shop": "charity",
+    "short_name": "Habitat ReStore"
+  }
+},
+{
+  "type": "way",
+  "id": 426929489,
+  "center": {
+    "lat": 40.1002784,
+    "lon": -83.0933653
+  },
+  "tags": {
+    "addr:city": "Dublin",
+    "addr:housenumber": "6525",
+    "addr:postcode": "43017",
+    "addr:state": "OH",
+    "addr:street": "Sawmill Road",
+    "brand": "Goodwill",
+    "brand:wikidata": "Q5583655",
+    "building": "yes",
+    "name": "Goodwill",
+    "opening_hours": "Mo-Sa 09:00-21:00; Su 10:00-18:00",
+    "shop": "charity"
+  }
+},
+{
+  "type": "way",
+  "id": 474656689,
+  "center": {
+    "lat": 40.0394967,
+    "lon": -82.9604485
+  },
+  "tags": {
+    "addr:city": "Columbus",
+    "addr:housenumber": "3500",
+    "addr:postcode": "43224",
+    "addr:state": "OH",
+    "addr:street": "Cleveland Avenue",
+    "building": "retail",
+    "building:levels": "1",
+    "name": "Village Discount Outlet",
+    "shop": "second_hand"
+  }
+},
+{
+  "type": "way",
+  "id": 477191125,
+  "center": {
+    "lat": 40.1564435,
+    "lon": -83.0948176
+  },
+  "tags": {
+    "brand": "Goodwill",
+    "brand:wikidata": "Q5583655",
+    "name": "Goodwill",
+    "shop": "charity"
+  }
+},
+{
+  "type": "way",
+  "id": 544062387,
+  "center": {
+    "lat": 40.1112219,
+    "lon": -82.9230551
+  },
+  "tags": {
+    "addr:city": "Westerville",
+    "addr:housenumber": "60",
+    "addr:postcode": "43081",
+    "addr:state": "OH",
+    "addr:street": "East Schrock Road",
+    "brand": "Goodwill",
+    "brand:wikidata": "Q5583655",
+    "building": "yes",
+    "changing_table": "no",
+    "name": "Goodwill",
+    "shop": "charity",
+    "toilets": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 546378112,
+  "center": {
+    "lat": 40.0326078,
+    "lon": -83.0012248
+  },
+  "tags": {
+    "building": "yes",
+    "shop": "second_hand"
+  }
+},
+{
+  "type": "way",
+  "id": 546696899,
+  "center": {
+    "lat": 40.0142551,
+    "lon": -83.0102073
+  },
+  "tags": {
+    "brand": "Goodwill",
+    "brand:wikidata": "Q5583655",
+    "building": "yes",
+    "name": "Goodwill",
+    "operator": "Goodwill Columbus",
+    "operator:wikidata": "Q126844141",
+    "shop": "charity"
+  }
+},
+{
+  "type": "way",
+  "id": 547281772,
+  "center": {
+    "lat": 40.0771043,
+    "lon": -83.0182333
+  },
+  "tags": {
+    "building:part": "yes",
+    "name": "Worthington Thrift Shop",
+    "shop": "second_hand"
+  }
+},
+{
+  "type": "way",
+  "id": 556428761,
+  "center": {
+    "lat": 39.9481028,
+    "lon": -82.9829583
+  },
+  "tags": {
+    "addr:city": "Columbus",
+    "addr:housenumber": "765",
+    "addr:postcode": "43206",
+    "addr:state": "OH",
+    "addr:street": "Parsons Avenue",
+    "building": "commercial",
+    "name": "M&M Thrift",
+    "phone": "+1-614-338-0077",
+    "shop": "second_hand",
+    "source": "mapillary"
+  }
+},
+{
+  "type": "way",
+  "id": 557732561,
+  "center": {
+    "lat": 40.0562949,
+    "lon": -83.0673445
+  },
+  "tags": {
+    "addr:city": "Columbus",
+    "addr:housenumber": "1800",
+    "addr:postcode": "43220",
+    "addr:state": "OH",
+    "addr:street": "West Henderson Road",
+    "building": "retail",
+    "name": "Volunteer's of America Thrift Store",
+    "shop": "second_hand"
+  }
+},
+{
+  "type": "way",
+  "id": 605233072,
+  "center": {
+    "lat": 39.8826597,
+    "lon": -83.0025748
+  },
+  "tags": {
+    "addr:city": "Columbus",
+    "addr:country": "US",
+    "addr:housenumber": "67",
+    "addr:postcode": "43207",
+    "addr:state": "OH",
+    "addr:street": "Great Southern Boulevard",
+    "name": "Ohio Thrift Store",
+    "shop": "second_hand"
+  }
+},
+{
+  "type": "way",
+  "id": 607970601,
+  "center": {
+    "lat": 39.9526120,
+    "lon": -83.1500212
+  },
+  "tags": {
+    "building": "yes",
+    "name": "Volunteers of America",
+    "shop": "charity"
+  }
+},
+{
+  "type": "way",
+  "id": 636242938,
+  "center": {
+    "lat": 40.0876889,
+    "lon": -82.9485930
+  },
+  "tags": {
+    "addr:city": "Columbus",
+    "addr:housenumber": "5738-5754",
+    "addr:postcode": "43231",
+    "addr:state": "OH",
+    "addr:street": "Columbus Square",
+    "name": "Ohio Thrift Store",
+    "shop": "second_hand"
+  }
+},
+{
+  "type": "way",
+  "id": 637555094,
+  "center": {
+    "lat": 40.0818048,
+    "lon": -82.9470276
+  },
+  "tags": {
+    "name": "Family Thrift",
+    "shop": "second_hand",
+    "website": "https://familythriftohio.com/"
+  }
+},
+{
+  "type": "way",
+  "id": 667535459,
+  "center": {
+    "lat": 40.0526995,
+    "lon": -83.0693677
+  },
+  "tags": {
+    "addr:city": "Upper Arlington",
+    "addr:housenumber": "1881",
+    "addr:postcode": "43220",
+    "addr:state": "OH",
+    "addr:street": "West Henderson Road",
+    "check_date": "2024-08-24",
+    "name": "Ohio Thrift Store",
+    "phone": "+1-614-732-4620",
+    "shop": "second_hand",
+    "website": "https://www.ohiothrift.com/Locations/upper-arlington-store"
+  }
+},
+{
+  "type": "way",
+  "id": 691754853,
+  "center": {
+    "lat": 40.0945948,
+    "lon": -82.8261231
+  },
+  "tags": {
+    "brand": "Goodwill",
+    "brand:wikidata": "Q5583655",
+    "building": "yes",
+    "name": "Goodwill",
+    "shop": "charity"
+  }
+},
+{
+  "type": "way",
+  "id": 745528496,
+  "center": {
+    "lat": 39.8553746,
+    "lon": -82.8266555
+  },
+  "tags": {
+    "brand": "Goodwill",
+    "brand:wikidata": "Q5583655",
+    "building": "yes",
+    "layer": "1",
+    "name": "Goodwill",
+    "operator": "Goodwill Columbus",
+    "operator:wikidata": "Q126844141",
+    "shop": "charity"
+  }
+},
+{
+  "type": "way",
+  "id": 745957181,
+  "center": {
+    "lat": 39.9242599,
+    "lon": -82.8828419
+  },
+  "tags": {
+    "building": "yes",
+    "name": "Volunteers of America Thrift Store",
+    "shop": "charity"
+  }
+},
+{
+  "type": "way",
+  "id": 745957182,
+  "center": {
+    "lat": 39.9242546,
+    "lon": -82.8832214
+  },
+  "tags": {
+    "brand": "The Salvation Army",
+    "brand:wikidata": "Q188307",
+    "building": "yes",
+    "name": "The Salvation Army",
+    "shop": "charity"
+  }
+},
+{
+  "type": "way",
+  "id": 790918471,
+  "center": {
+    "lat": 39.9888148,
+    "lon": -83.0503750
+  },
+  "tags": {
+    "building": "yes",
+    "name": "One More Time ETC.",
+    "opening_hours": "Tu-Sa 11:00-18:00",
+    "shop": "second_hand"
+  }
+},
+{
+  "type": "way",
+  "id": 819812024,
+  "center": {
+    "lat": 39.9581867,
+    "lon": -82.9733269
+  },
+  "tags": {
+    "brand": "The Salvation Army",
+    "brand:wikidata": "Q188307",
+    "building": "commercial",
+    "name": "The Salvation Army",
+    "shop": "charity"
+  }
+},
+{
+  "type": "way",
+  "id": 858641194,
+  "center": {
+    "lat": 39.9865250,
+    "lon": -82.9987158
+  },
+  "tags": {
+    "addr:city": "Columbus",
+    "addr:housenumber": "249",
+    "addr:postcode": "43201",
+    "addr:state": "OH",
+    "addr:street": "East Fifth Avenue",
+    "building": "commercial",
+    "building:levels": "1",
+    "name": "Flower Child",
+    "roof:levels": "0",
+    "shop": "second_hand"
+  }
+},
+{
+  "type": "way",
+  "id": 1010735243,
+  "center": {
+    "lat": 39.9145541,
+    "lon": -82.8875855
+  },
+  "tags": {
+    "building": "yes",
+    "name": "Ohio Thrift Store",
+    "shop": "second_hand"
+  }
+},
+{
+  "type": "way",
+  "id": 1118474378,
+  "center": {
+    "lat": 39.9275175,
+    "lon": -82.9970267
+  },
+  "tags": {
+    "brand": "The Salvation Army",
+    "building": "yes",
+    "name": "Salvation Army Family Store",
+    "shop": "charity"
+  }
+},
+{
+  "type": "way",
+  "id": 1131156700,
+  "center": {
+    "lat": 39.9058343,
+    "lon": -82.7781290
+  },
+  "tags": {
+    "building": "retail",
+    "name": "Volunteers of America Thrift Store",
+    "shop": "second_hand"
+  }
+},
+{
+  "type": "way",
+  "id": 1355194543,
+  "center": {
+    "lat": 40.1501279,
+    "lon": -82.9187349
+  },
+  "tags": {
+    "addr:city": "Westerville",
+    "addr:housenumber": "7107",
+    "addr:postcode": "43082",
+    "addr:state": "OH",
+    "addr:street": "Northgate Way",
+    "brand": "Goodwill",
+    "brand:wikidata": "Q5583655",
+    "building": "retail",
+    "name": "Goodwill",
+    "not:operator:wikidata": "Q126844141",
+    "opening_hours": "Mo-Sa 09:00-20:00; Su 10:00-18:00",
+    "operator": "Marion Goodwill Industries",
+    "operator:wikidata": "Q126898874",
+    "phone": "+1-614-523-4100",
+    "second_hand": "yes",
+    "shop": "charity",
+    "website": "https://www.mariongoodwill.org/"
+  }
+},
+{
+  "type": "way",
+  "id": 1369802814,
+  "center": {
+    "lat": 39.9821455,
+    "lon": -83.1534197
+  },
+  "tags": {
+    "brand": "Goodwill",
+    "brand:wikidata": "Q5583655",
+    "building": "yes",
+    "layer": "1",
+    "name": "Goodwill",
+    "note": "Donation Center",
+    "operator": "Goodwill Columbus",
+    "operator:wikidata": "Q126844141",
+    "recycling_type": "centre",
+    "shop": "charity"
+  }
+}
+
+  ]
+}

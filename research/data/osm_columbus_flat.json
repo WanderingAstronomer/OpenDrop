@@ -1,0 +1,422 @@
+[
+  {
+    "osm": "node/3643093117",
+    "class": "shop=second_hand",
+    "name": "Volunteers of America Thrift Store",
+    "operator": "",
+    "lat": 40.0374087,
+    "lon": -82.9991702,
+    "hours": "",
+    "addr": "3620 Indianola Avenue Columbus"
+  },
+  {
+    "osm": "node/3660709524",
+    "class": "shop=second_hand",
+    "name": "In Review",
+    "operator": "",
+    "lat": 40.0596844,
+    "lon": -83.0194253,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "node/3819972839",
+    "class": "recycling:clothes",
+    "name": "",
+    "operator": "",
+    "lat": 40.0728614,
+    "lon": -83.1274859,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "node/5469202751",
+    "class": "recycling:clothes",
+    "name": "",
+    "operator": "",
+    "lat": 39.9447531,
+    "lon": -82.9830784,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "node/6916850536",
+    "class": "shop=charity",
+    "name": "Goodwill",
+    "operator": "Goodwill",
+    "lat": 39.97269,
+    "lon": -82.8949224,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "node/6967766148",
+    "class": "shop=second_hand",
+    "name": "Ohio Thrift",
+    "operator": "",
+    "lat": 39.9544969,
+    "lon": -83.1171334,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "node/6967820451",
+    "class": "shop=second_hand",
+    "name": "Ohio Thrift Store",
+    "operator": "",
+    "lat": 39.9441812,
+    "lon": -83.0386745,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "node/6978411936",
+    "class": "shop=second_hand",
+    "name": "Ohio Thrift Store",
+    "operator": "",
+    "lat": 40.0400932,
+    "lon": -82.9624973,
+    "hours": "",
+    "addr": "3551 Cleveland Avenue Columbus"
+  },
+  {
+    "osm": "node/7968410933",
+    "class": "shop=charity",
+    "name": "Dress for Success",
+    "operator": "",
+    "lat": 39.9869575,
+    "lon": -83.0052696,
+    "hours": "",
+    "addr": "1204 North High Street Columbus"
+  },
+  {
+    "osm": "node/8040139079",
+    "class": "shop=charity",
+    "name": "Out of the Closet",
+    "operator": "",
+    "lat": 39.9872811,
+    "lon": -83.0052777,
+    "hours": "Su 10:00-18:00; Mo-Sa 10:00-19:00",
+    "addr": "1230 North High Street Columbus"
+  },
+  {
+    "osm": "node/9115712797",
+    "class": "shop=charity",
+    "name": "Goodwill",
+    "operator": "Goodwill Columbus",
+    "lat": 39.9283367,
+    "lon": -82.7898791,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "node/9787010127",
+    "class": "shop=charity",
+    "name": "HEART Mid-Ohio Food Bank",
+    "operator": "",
+    "lat": 39.9540236,
+    "lon": -82.824283,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "node/9812853769",
+    "class": "shop=charity",
+    "name": "Goodwill",
+    "operator": "Goodwill",
+    "lat": 40.0102913,
+    "lon": -82.8653066,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "node/12624136681",
+    "class": "recycling:clothes",
+    "name": "",
+    "operator": "Ohio Clothing Recycling",
+    "lat": 39.9850333,
+    "lon": -83.0404478,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "node/13347186957",
+    "class": "shop=second_hand",
+    "name": "Buckeye Bargains",
+    "operator": "",
+    "lat": 39.9951353,
+    "lon": -83.0087341,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "way/233544569",
+    "class": "shop=charity",
+    "name": "Habitat for Humanity ReStore",
+    "operator": "Habitat for Humanity ReStore",
+    "lat": 40.0641636,
+    "lon": -83.0865703,
+    "hours": "",
+    "addr": "2136 Bethel Road Columbus"
+  },
+  {
+    "osm": "way/426929489",
+    "class": "shop=charity",
+    "name": "Goodwill",
+    "operator": "Goodwill",
+    "lat": 40.1002784,
+    "lon": -83.0933653,
+    "hours": "Mo-Sa 09:00-21:00; Su 10:00-18:00",
+    "addr": "6525 Sawmill Road Dublin"
+  },
+  {
+    "osm": "way/474656689",
+    "class": "shop=second_hand",
+    "name": "Village Discount Outlet",
+    "operator": "",
+    "lat": 40.0394967,
+    "lon": -82.9604485,
+    "hours": "",
+    "addr": "3500 Cleveland Avenue Columbus"
+  },
+  {
+    "osm": "way/477191125",
+    "class": "shop=charity",
+    "name": "Goodwill",
+    "operator": "Goodwill",
+    "lat": 40.1564435,
+    "lon": -83.0948176,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "way/544062387",
+    "class": "shop=charity",
+    "name": "Goodwill",
+    "operator": "Goodwill",
+    "lat": 40.1112219,
+    "lon": -82.9230551,
+    "hours": "",
+    "addr": "60 East Schrock Road Westerville"
+  },
+  {
+    "osm": "way/546378112",
+    "class": "shop=second_hand",
+    "name": "",
+    "operator": "",
+    "lat": 40.0326078,
+    "lon": -83.0012248,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "way/546696899",
+    "class": "shop=charity",
+    "name": "Goodwill",
+    "operator": "Goodwill Columbus",
+    "lat": 40.0142551,
+    "lon": -83.0102073,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "way/547281772",
+    "class": "shop=second_hand",
+    "name": "Worthington Thrift Shop",
+    "operator": "",
+    "lat": 40.0771043,
+    "lon": -83.0182333,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "way/556428761",
+    "class": "shop=second_hand",
+    "name": "M&M Thrift",
+    "operator": "",
+    "lat": 39.9481028,
+    "lon": -82.9829583,
+    "hours": "",
+    "addr": "765 Parsons Avenue Columbus"
+  },
+  {
+    "osm": "way/557732561",
+    "class": "shop=second_hand",
+    "name": "Volunteer's of America Thrift Store",
+    "operator": "",
+    "lat": 40.0562949,
+    "lon": -83.0673445,
+    "hours": "",
+    "addr": "1800 West Henderson Road Columbus"
+  },
+  {
+    "osm": "way/605233072",
+    "class": "shop=second_hand",
+    "name": "Ohio Thrift Store",
+    "operator": "",
+    "lat": 39.8826597,
+    "lon": -83.0025748,
+    "hours": "",
+    "addr": "67 Great Southern Boulevard Columbus"
+  },
+  {
+    "osm": "way/607970601",
+    "class": "shop=charity",
+    "name": "Volunteers of America",
+    "operator": "",
+    "lat": 39.952612,
+    "lon": -83.1500212,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "way/636242938",
+    "class": "shop=second_hand",
+    "name": "Ohio Thrift Store",
+    "operator": "",
+    "lat": 40.0876889,
+    "lon": -82.948593,
+    "hours": "",
+    "addr": "5738-5754 Columbus Square Columbus"
+  },
+  {
+    "osm": "way/637555094",
+    "class": "shop=second_hand",
+    "name": "Family Thrift",
+    "operator": "",
+    "lat": 40.0818048,
+    "lon": -82.9470276,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "way/667535459",
+    "class": "shop=second_hand",
+    "name": "Ohio Thrift Store",
+    "operator": "",
+    "lat": 40.0526995,
+    "lon": -83.0693677,
+    "hours": "",
+    "addr": "1881 West Henderson Road Upper Arlington"
+  },
+  {
+    "osm": "way/691754853",
+    "class": "shop=charity",
+    "name": "Goodwill",
+    "operator": "Goodwill",
+    "lat": 40.0945948,
+    "lon": -82.8261231,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "way/745528496",
+    "class": "shop=charity",
+    "name": "Goodwill",
+    "operator": "Goodwill Columbus",
+    "lat": 39.8553746,
+    "lon": -82.8266555,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "way/745957181",
+    "class": "shop=charity",
+    "name": "Volunteers of America Thrift Store",
+    "operator": "",
+    "lat": 39.9242599,
+    "lon": -82.8828419,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "way/745957182",
+    "class": "shop=charity",
+    "name": "The Salvation Army",
+    "operator": "The Salvation Army",
+    "lat": 39.9242546,
+    "lon": -82.8832214,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "way/790918471",
+    "class": "shop=second_hand",
+    "name": "One More Time ETC.",
+    "operator": "",
+    "lat": 39.9888148,
+    "lon": -83.050375,
+    "hours": "Tu-Sa 11:00-18:00",
+    "addr": ""
+  },
+  {
+    "osm": "way/819812024",
+    "class": "shop=charity",
+    "name": "The Salvation Army",
+    "operator": "The Salvation Army",
+    "lat": 39.9581867,
+    "lon": -82.9733269,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "way/858641194",
+    "class": "shop=second_hand",
+    "name": "Flower Child",
+    "operator": "",
+    "lat": 39.986525,
+    "lon": -82.9987158,
+    "hours": "",
+    "addr": "249 East Fifth Avenue Columbus"
+  },
+  {
+    "osm": "way/1010735243",
+    "class": "shop=second_hand",
+    "name": "Ohio Thrift Store",
+    "operator": "",
+    "lat": 39.9145541,
+    "lon": -82.8875855,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "way/1118474378",
+    "class": "shop=charity",
+    "name": "Salvation Army Family Store",
+    "operator": "The Salvation Army",
+    "lat": 39.9275175,
+    "lon": -82.9970267,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "way/1131156700",
+    "class": "shop=second_hand",
+    "name": "Volunteers of America Thrift Store",
+    "operator": "",
+    "lat": 39.9058343,
+    "lon": -82.778129,
+    "hours": "",
+    "addr": ""
+  },
+  {
+    "osm": "way/1355194543",
+    "class": "shop=charity",
+    "name": "Goodwill",
+    "operator": "Marion Goodwill Industries",
+    "lat": 40.1501279,
+    "lon": -82.9187349,
+    "hours": "Mo-Sa 09:00-20:00; Su 10:00-18:00",
+    "addr": "7107 Northgate Way Westerville"
+  },
+  {
+    "osm": "way/1369802814",
+    "class": "shop=charity",
+    "name": "Goodwill",
+    "operator": "Goodwill Columbus",
+    "lat": 39.9821455,
+    "lon": -83.1534197,
+    "hours": "",
+    "addr": ""
+  }
+]
