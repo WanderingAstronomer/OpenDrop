@@ -30,6 +30,8 @@ services:
         condition: service_healthy
     ports:
       - "${API_PORT:-8000}:8000"
+    volumes:
+      - media:/app/media               # uploaded photos (written by the API)
     restart: unless-stopped
 
   web:
@@ -37,6 +39,7 @@ services:
     volumes:
       - ./frontend:/usr/share/nginx/html:ro
       - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - media:/srv/media:ro            # serve uploaded photos at /media/
     depends_on:
       api:
         condition: service_healthy   # api has a Dockerfile HEALTHCHECK; don't proxy to a cold API
@@ -68,3 +71,4 @@ services:
 
 volumes:
   pgdata:
+  media:

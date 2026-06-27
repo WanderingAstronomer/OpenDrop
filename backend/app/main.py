@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from . import db
 from .config import settings
-from .routers import locations, meta, votes
+from .routers import images, locations, meta, votes
 
 logging.basicConfig(level=logging.INFO)
 
@@ -45,3 +45,4 @@ async def http_exception_handler(_request: Request, exc: HTTPException):
 app.include_router(meta.router, prefix="/api")
 app.include_router(locations.router, prefix="/api")
 app.include_router(votes.router, prefix="/api")
+app.include_router(images.router, prefix="/api")

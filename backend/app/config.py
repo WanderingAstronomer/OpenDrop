@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     app_env: str = "dev"  # set APP_ENV=prod to enforce the secrets guard below
     content_denylist: str = ""  # optional comma-separated words rejected in submissions
 
+    media_dir: str = "/app/media"
+    image_max_bytes: int = 6_000_000
+    image_uploads_per_ip_per_day: int = 8
+
     @cached_property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

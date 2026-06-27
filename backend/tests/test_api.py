@@ -124,6 +124,30 @@ def test_submit_missing_token_403(client):
 
 
 @requires_db
+def test_image_votes_promote_and_apply_pin_correction(conn, client):
+    """A correction photo: helpful votes promote pending->visible, and at score 3 the
+    pin auto-moves to the suggested location (community-validated, no moderator)."""
+    loc = _mk_location(conn, "img correction test", lat=40.00, lon=-83.00)
+    img = conn.execute(
+        "INSERT INTO location_images (location_id, path, mime, submitter_ip_hash, suggested_lat, suggested_lon) "
+        "VALUES (%s,'x.jpg','image/jpeg','h',40.01,-83.01) RETURNING id", (loc,)
+    ).fetchone()["id"]
+    conn.commit()
+    # default list excludes a 'pending' photo; gallery (include_low) shows it
+    assert client.get(f"/api/locations/{loc}/images").json()["images"] == []
+    assert len(client.get(f"/api/locations/{loc}/images?include_low=true").json()["images"]) == 1
+    for i in range(3):
+        r = client.post(f"/api/images/{img}/vote", json={"vote": "helpful"}, headers={"X-Real-IP": f"10.20.0.{i}"})
+        assert r.status_code == 200
+    row = conn.execute("SELECT score, status, applied FROM location_images WHERE id=%s", (img,)).fetchone()
+    assert row["score"] == 3 and row["status"] == "visible" and row["applied"] is True
+    geo = conn.execute(
+        "SELECT round(ST_Y(geom)::numeric,2) AS lat, round(ST_X(geom)::numeric,2) AS lon FROM locations WHERE id=%s", (loc,)
+    ).fetchone()
+    assert float(geo["lat"]) == 40.01 and float(geo["lon"]) == -83.01
+
+
+@requires_db
 def test_source_removal_retires_location(conn):
     """Closure detection: a location that loses its last ingest source must drop to
     confidence 0 / pending — guards the LEAST(85, NULL)=85 source-component bug."""
