@@ -13,8 +13,9 @@ COPY pipeline ./pipeline
 # Committed Phase-1 fixture used as the deterministic OSM fallback in pipeline.seed
 COPY research/data/osm_columbus.json ./research/data/osm_columbus.json
 
-# Run as a non-root user (defense-in-depth for a public-facing container)
-RUN useradd -r -u 10001 appuser && chown -R appuser /app
+# Run as a non-root user (defense-in-depth for a public-facing container).
+# Pre-create the media dir owned by appuser so the named volume inherits write perms.
+RUN useradd -r -u 10001 appuser && mkdir -p /app/media && chown -R appuser /app
 USER appuser
 
 EXPOSE 8000

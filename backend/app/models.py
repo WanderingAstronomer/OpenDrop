@@ -13,6 +13,10 @@ class VoteIn(BaseModel):
     turnstile_token: Optional[str] = None
 
 
+class ImageVoteIn(BaseModel):
+    vote: Literal["helpful", "unhelpful"]
+
+
 class AddressIn(BaseModel):
     line: Optional[str] = None
     city: Optional[str] = None
