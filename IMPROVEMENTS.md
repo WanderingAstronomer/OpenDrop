@@ -2,6 +2,22 @@
 
 > Output of a 7-dimension project-wide scan (frontend/UX/a11y, backend API, pipeline/data, security/abuse, ops/deploy, tests/CI, data/civic-licensing). The system is **working and validated** (Phases 1–4); this is the path from "validated demo" to "production civic infrastructure." Items are tagged **impact** (H/M/L) and **effort** (S/M/L), grouped by priority. Cross-cutting themes flagged by multiple reviewers are called out.
 
+## ✅ Shipped since this scan
+
+- **0.1 AGPL-3.0 LICENSE** (+ ODbL dataset / CC0-submissions documented).
+- **0.2 CI is real** — GitHub Actions (postgis service, ruff, all migrations, `pytest`), unified `pytest.ini`, `requirements-dev.txt`, Makefile. 21/21 tests pass.
+- **0.3 Scheduled re-sync** — `pipeline/sync.py` + opt-in `scheduler` compose profile; **+ closure/deletion detection** in the loader (region-scoped). *(Surfaced and fixed a real `LEAST(85,NULL)=85` confidence bug — migration 0002 + regression test.)*
+- **0.4 Secrets fail-fast guard** (`APP_ENV=prod` refuses default salt/Turnstile-test-key/DB password).
+- **0.6 nginx security headers + gzip**; **read rate-limiting** (api 20 r/s, export 6 r/m → 429).
+- **0.7 `.dockerignore`**; **0.8 backups** (`scripts/backup.sh`/`restore.sh` + docs).
+- **P1 Planet Aid scraper** (+80 real Columbus bins) + **region config** (`pipeline/regions.py`).
+- **P1 submission content-screen** (reject links/emails/control-chars).
+- **P1 prod compose + Caddy TLS**, non-root container, api/web healthchecks, least-privilege DB role (`deploy/app_role.sql`).
+- **P1 a11y/UX**: loading/empty/error states, focus management/ESC on the submit dialog, label/ARIA, aria-live toasts, reduced-motion.
+- **New features**: **location search** (`/api/geosearch`), **"use my location"**, **zoom-out cap**, satellite-mode contrast, persisted basemap.
+
+Remaining open items below are the still-unaddressed P1/P2 entries (keyboard map list-view, DB pool tuning, hours normalization, incremental dedup, CSV export, SRI, i18n, salt rotation, etc.).
+
 ## What's already strong (don't regress)
 - **Security fundamentals:** all SQL parameterized; XSS-safe output (`esc()`); race-safe vote cooldown (`pg_advisory_xact_lock`); trusted `X-Real-IP` (spoofed XFF can't bypass cooldown, with a test); raw IPs never stored (salted hashes); Turnstile fails closed.
 - **Data integrity:** storage-policy enforced end-to-end (Goodwill persists nothing); field-provenance invariant; dedup predicate handles the known traps; ODbL attribution embedded *in* the export payload.
