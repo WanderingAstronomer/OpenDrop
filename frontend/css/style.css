@@ -1,0 +1,65 @@
+:root {
+  --high: #1a9850;
+  --medium: #f1a340;
+  --low: #d73027;
+  --ink: #1f2933;
+  --panel-bg: #ffffff;
+  --shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); }
+#map { position: absolute; inset: 0; }
+
+.legend {
+  position: absolute; top: 12px; left: 12px; z-index: 1000;
+  background: var(--panel-bg); padding: 10px 12px; border-radius: 10px; box-shadow: var(--shadow);
+  font-size: 13px; line-height: 1.7;
+}
+.legend strong { display: block; font-size: 15px; margin-bottom: 4px; }
+.legend-row { display: flex; align-items: center; gap: 6px; }
+
+.dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.15); }
+.dot.high { background: var(--high); }
+.dot.medium { background: var(--medium); }
+.dot.low { background: var(--low); }
+
+.add-btn {
+  position: absolute; right: 16px; bottom: 24px; z-index: 1000;
+  background: #2b6cb0; color: #fff; border: none; border-radius: 24px;
+  padding: 12px 18px; font-size: 15px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow);
+}
+.add-btn:hover { background: #2c5282; }
+
+.panel {
+  position: absolute; right: 16px; bottom: 80px; z-index: 1001; width: 320px; max-width: calc(100vw - 32px);
+  background: var(--panel-bg); border-radius: 12px; box-shadow: var(--shadow); padding: 16px;
+}
+.panel.hidden { display: none; }
+.panel h2 { margin: 0 0 10px; font-size: 17px; }
+.panel label { display: block; font-size: 12px; margin: 8px 0 2px; color: #52606d; }
+.panel input, .panel select { width: 100%; padding: 8px; border: 1px solid #cbd2d9; border-radius: 8px; font-size: 14px; }
+.panel .row { display: flex; gap: 8px; }
+.panel .row > * { flex: 1; }
+.panel .actions { display: flex; gap: 8px; margin-top: 12px; }
+.panel button { padding: 9px 12px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.panel button.primary { background: #2b6cb0; color: #fff; flex: 1; }
+.panel button.ghost { background: #e4e7eb; color: var(--ink); }
+
+.popover h3 { margin: 0 0 4px; font-size: 16px; }
+.popover .meta { color: #52606d; font-size: 12.5px; margin-bottom: 6px; }
+.popover .addr, .popover .hours { font-size: 13px; margin: 3px 0; }
+.popover .conf { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 8px 0; }
+.popover .vote-area { margin-top: 8px; border-top: 1px solid #eef1f4; padding-top: 8px; }
+.popover .btns { display: flex; gap: 8px; margin-top: 8px; }
+.popover .btns button { flex: 1; padding: 7px; border: 1px solid #cbd2d9; background: #fff; border-radius: 8px; cursor: pointer; font-size: 13px; }
+.popover .btns button.confirm:hover { background: #e6f4ea; border-color: var(--high); }
+.popover .btns button.deny:hover { background: #fdecea; border-color: var(--low); }
+
+.toast-host { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 2000; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.toast { background: #323f4b; color: #fff; padding: 10px 16px; border-radius: 20px; font-size: 13px; opacity: 0; transform: translateY(8px); transition: all .25s; box-shadow: var(--shadow); }
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.success { background: #1a7f4b; }
+.toast.error { background: #b03030; }
+
+.cluster-bubble { background: #4a90d9; color: #fff; border: 2px solid #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; box-shadow: var(--shadow); }

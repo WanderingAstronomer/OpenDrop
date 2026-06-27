@@ -1,0 +1,123 @@
+"""API + trigger behavior tests (require the DB up). Cover the Phase-4 checks:
+vote raises confidence, denies -> pending (single & multi-source override),
+24h cooldown 429, missing-token 403 (dev mock), export excludes non-redistributable."""
+import uuid
+
+from conftest import requires_db
+
+TOK = "dev-mock-token"  # any non-empty token passes the CF test secret
+
+
+def _mk_location(conn, name, lat=39.96, lon=-82.99, sources=("salvation_army",), org_type="charity_store"):
+    """Insert a location + its source rows (triggers recompute confidence). Returns id."""
+    row = conn.execute(
+        "INSERT INTO locations (geom, name, org_type) "
+        "VALUES (ST_SetSRID(ST_MakePoint(%s,%s),4326), %s, %s) RETURNING id",
+        (lon, lat, name, org_type),
+    ).fetchone()
+    loc_id = row["id"]
+    for code in sources:
+        conn.execute(
+            "INSERT INTO location_sources (location_id, source_code, source_ref, source_geom) "
+            "VALUES (%s, %s, %s, ST_SetSRID(ST_MakePoint(%s,%s),4326))",
+            (loc_id, code, f"{code}/{uuid.uuid4()}", lon, lat),
+        )
+    conn.commit()
+    return loc_id
+
+
+def _confidence(conn, loc_id):
+    return float(conn.execute("SELECT confidence FROM locations WHERE id=%s", (loc_id,)).fetchone()["confidence"])
+
+
+def _status(conn, loc_id):
+    return conn.execute("SELECT status FROM locations WHERE id=%s", (loc_id,)).fetchone()["status"]
+
+
+@requires_db
+def test_health(client):
+    r = client.get("/api/health")
+    assert r.status_code == 200 and r.json()["db"] is True
+
+
+@requires_db
+def test_meta_shape(client):
+    r = client.get("/api/meta")
+    assert r.status_code == 200
+    body = r.json()
+    assert "sources" in body and "turnstile_sitekey" in body and "confidence_buckets" in body
+
+
+@requires_db
+def test_vote_missing_token_403(client, conn):
+    loc = _mk_location(conn, "SA test missing token")
+    r = client.post(f"/api/locations/{loc}/vote", json={"vote": "confirm"})  # no token
+    assert r.status_code == 403
+    assert r.json()["error"]["code"] == "turnstile_failed"
+
+
+@requires_db
+def test_vote_confirm_raises_then_cooldown(client, conn):
+    loc = _mk_location(conn, "SA confirm+cooldown")
+    before = _confidence(conn, loc)
+    r = client.post(f"/api/locations/{loc}/vote", json={"vote": "confirm", "turnstile_token": TOK},
+                    headers={"X-Real-IP": "203.0.113.10"})
+    assert r.status_code == 200
+    assert r.json()["confidence"] > before
+    # second vote from same IP within 24h -> cooldown
+    r2 = client.post(f"/api/locations/{loc}/vote", json={"vote": "confirm", "turnstile_token": TOK},
+                     headers={"X-Real-IP": "203.0.113.10"})
+    assert r2.status_code == 429 and r2.json()["error"]["code"] == "cooldown_active"
+
+
+@requires_db
+def test_forged_xff_does_not_change_ip(client, conn):
+    """A forged X-Forwarded-For must NOT bypass the cooldown — only X-Real-IP (set by nginx) is trusted."""
+    loc = _mk_location(conn, "SA xff")
+    h = {"X-Real-IP": "203.0.113.20", "X-Forwarded-For": "1.2.3.4"}
+    assert client.post(f"/api/locations/{loc}/vote", json={"vote": "confirm", "turnstile_token": TOK}, headers=h).status_code == 200
+    h2 = {"X-Real-IP": "203.0.113.20", "X-Forwarded-For": "9.9.9.9"}  # different XFF, same real IP
+    assert client.post(f"/api/locations/{loc}/vote", json={"vote": "confirm", "turnstile_token": TOK}, headers=h2).status_code == 429
+
+
+@requires_db
+def test_single_source_denies_to_pending(client, conn):
+    loc = _mk_location(conn, "SA denies", sources=("salvation_army",))
+    assert _status(conn, loc) == "active"
+    for i in range(4):  # 4 distinct IPs => crowd -32 => 50-32=18 < 25
+        client.post(f"/api/locations/{loc}/vote", json={"vote": "deny", "turnstile_token": TOK},
+                    headers={"X-Real-IP": f"198.51.100.{i}"})
+    assert _status(conn, loc) == "pending"
+
+
+@requires_db
+def test_multisource_override_to_pending(client, conn):
+    loc = _mk_location(conn, "OSM+SA override", sources=("osm", "salvation_army"))  # source_component 85
+    assert _confidence(conn, loc) >= 80 and _status(conn, loc) == "active"
+    for i in range(5):  # deny-dominance override (>=5 denies, >= confirms+5)
+        client.post(f"/api/locations/{loc}/vote", json={"vote": "deny", "turnstile_token": TOK},
+                    headers={"X-Real-IP": f"198.51.100.{100 + i}"})
+    assert _status(conn, loc) == "pending"
+
+
+@requires_db
+def test_export_excludes_non_redistributable(client, conn):
+    """A location whose only source is enrich-only (goodwill) must never appear in /api/export."""
+    loc = _mk_location(conn, "Goodwill-only enrich", sources=("goodwill",))
+    # push it 'active' via crowd confirms (source_component=0, crowd up to +30)
+    for i in range(6):
+        client.post(f"/api/locations/{loc}/vote", json={"vote": "confirm", "turnstile_token": TOK},
+                    headers={"X-Real-IP": f"192.0.2.{i}"})
+    row = conn.execute("SELECT status, is_redistributable FROM locations WHERE id=%s", (loc,)).fetchone()
+    assert row["is_redistributable"] is False
+    export = client.get("/api/export").json()
+    ids = {f["properties"]["id"] for f in export["features"]}
+    assert loc not in ids
+    # but attribution is embedded in the payload (ODbL travels with the data)
+    assert "attribution" in export and isinstance(export["attribution"], list)
+
+
+@requires_db
+def test_submit_missing_token_403(client):
+    r = client.post("/api/locations", json={"name": "X", "org_type": "drop_bin", "address": {"city": "Columbus"}})
+    assert r.status_code == 403

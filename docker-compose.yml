@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-opendrop}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-opendrop}
+      POSTGRES_DB: ${POSTGRES_DB:-opendrop}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations/0001_init.sql:/docker-entrypoint-initdb.d/0001_init.sql:ro
+    healthcheck:
+      # Schema-aware: passes only once 0001_init.sql has created+seeded `sources`,
+      # so `api` (depends_on healthy) never connects during the initdb temp-server window.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-opendrop} -d $${POSTGRES_DB:-opendrop} && psql -U $${POSTGRES_USER:-opendrop} -d $${POSTGRES_DB:-opendrop} -tAc 'select 1 from sources limit 1'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://opendrop:opendrop@db:5432/opendrop}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8000}:8000"
+    restart: unless-stopped
+
+  web:
+    image: nginx:alpine
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
