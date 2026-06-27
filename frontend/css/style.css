@@ -71,3 +71,17 @@ html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, "Se
   border: 2px solid #ffffff; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
 }
 .odc-cluster:hover { background: #1d7a8c; }
+
+/* Loading / empty / error banner over the map */
+.map-status {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1100;
+  background: rgba(31, 41, 51, 0.92); color: #fff; padding: 8px 16px; border-radius: 20px;
+  font-size: 13px; box-shadow: var(--shadow); max-width: 80vw; text-align: center;
+}
+.map-status[hidden] { display: none; }
+
+/* Respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .toast { transition: opacity 0.01ms; }
+  html { scroll-behavior: auto; }
+}
