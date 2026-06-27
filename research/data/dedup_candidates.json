@@ -1,0 +1,92 @@
+[
+  {
+    "osm": "way/477191125",
+    "osm_name": "Goodwill",
+    "osm_op": "Goodwill",
+    "org": "d8b08ecf-458a-e111-8dde-005056934050",
+    "org_name": "Powell Rd./Sawmill Pkwy Store",
+    "dist_m": 3.8,
+    "name_sim": 1.0,
+    "rf_sim": 1.0
+  },
+  {
+    "osm": "way/691754853",
+    "osm_name": "Goodwill",
+    "osm_op": "Goodwill",
+    "org": "734fd37b-458a-e111-8dde-005056934050",
+    "org_name": "New Albany Donation Center",
+    "dist_m": 6.3,
+    "name_sim": 1.0,
+    "rf_sim": 1.0
+  },
+  {
+    "osm": "way/544062387",
+    "osm_name": "Goodwill",
+    "osm_op": "Goodwill",
+    "org": "b4a59e69-2d4a-4b7b-a6ec-2e87ba1f61f3",
+    "org_name": "Westerville Retail Store",
+    "dist_m": 25.9,
+    "name_sim": 1.0,
+    "rf_sim": 1.0
+  },
+  {
+    "osm": "way/745528496",
+    "osm_name": "Goodwill",
+    "osm_op": "Goodwill Columbus",
+    "org": "c730181b-0dc6-e511-bed2-005056890337",
+    "org_name": "Canal Winchester Retail Store",
+    "dist_m": 26.0,
+    "name_sim": 1.0,
+    "rf_sim": 1.0
+  },
+  {
+    "osm": "way/1369802814",
+    "osm_name": "Goodwill",
+    "osm_op": "Goodwill Columbus",
+    "org": "f2704a36-ee3a-e511-97d0-005056890337",
+    "org_name": "Renner Road Retail Store",
+    "dist_m": 42.9,
+    "name_sim": 1.0,
+    "rf_sim": 1.0
+  },
+  {
+    "osm": "node/6916850536",
+    "osm_name": "Goodwill",
+    "osm_op": "Goodwill",
+    "org": "441adb75-458a-e111-8dde-005056934050",
+    "org_name": "Whitehall Retail Store",
+    "dist_m": 97.0,
+    "name_sim": 1.0,
+    "rf_sim": 1.0
+  },
+  {
+    "osm": "way/1355194543",
+    "osm_name": "Goodwill",
+    "osm_op": "Marion Goodwill Industries",
+    "org": "11c7580a-32cf-e411-b4ab-0050568924e6",
+    "org_name": "Westerville Goodwill Retail Store",
+    "dist_m": 112.8,
+    "name_sim": 1.0,
+    "rf_sim": 1.0
+  },
+  {
+    "osm": "node/9812853769",
+    "osm_name": "Goodwill",
+    "osm_op": "Goodwill",
+    "org": "4f4dfd57-458a-e111-8dde-005056934050",
+    "org_name": "S Hamilton Rd Retail Store",
+    "dist_m": 162.4,
+    "name_sim": 1.0,
+    "rf_sim": 1.0
+  },
+  {
+    "osm": "way/426929489",
+    "osm_name": "Goodwill",
+    "osm_op": "Goodwill",
+    "org": "c7a20146-458a-e111-8dde-005056934050",
+    "org_name": "Sawmill Rd Retail Store",
+    "dist_m": 260.6,
+    "name_sim": 1.0,
+    "rf_sim": 1.0
+  }
+]
