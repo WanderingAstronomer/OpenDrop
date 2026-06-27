@@ -11,6 +11,26 @@ COLUMBUS_ZIPS = [
     "43123", "43147", "43204", "43209", "43214", "43219", "43229", "43230", "43235",
 ]
 
+# Representative ZIPs across Ohio metros (ZIP-sweep scrapers dedupe overlaps on LocationGUID).
+OHIO_ZIPS = [
+    # Columbus
+    "43215", "43004", "43017", "43229", "43230", "43123", "43055", "43130",
+    # Cleveland / NE Ohio
+    "44113", "44102", "44120", "44130", "44144", "44035", "44052", "44129", "44221",
+    # Cincinnati / SW Ohio
+    "45202", "45211", "45227", "45238", "45240", "45011", "45044",
+    # Toledo / NW Ohio
+    "43604", "43615", "43623", "43402", "45840", "44870",
+    # Akron / Canton
+    "44303", "44310", "44319", "44708", "44720", "44691",
+    # Dayton / Springfield
+    "45402", "45414", "45424", "45459", "45429", "45503",
+    # Youngstown / Steubenville
+    "44503", "44512", "43952",
+    # Southern / smaller metros
+    "45601", "45701", "45662", "45801", "44903", "43701", "43302",
+]
+
 
 @dataclass
 class Region:
@@ -40,7 +60,10 @@ def _columbus() -> Region:
     return Region("columbus", bbox, (39.96, -82.99), COLUMBUS_ZIPS, 25)
 
 
-REGIONS = {"columbus": _columbus()}
+REGIONS = {
+    "columbus": _columbus(),
+    "ohio": Region("ohio", (38.40, -84.82, 41.98, -80.52), (40.0, -82.7), OHIO_ZIPS, 30),
+}
 
 
 def get_region(name: str | None = None) -> Region:

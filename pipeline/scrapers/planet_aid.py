@@ -33,8 +33,11 @@ class PlanetAidScraper(BaseScraper):
 
     def fetch(self, region):
         seen: set[str] = set()
+        # adaptive grid: coarser for large regions so a statewide sweep isn't ~900 calls
+        span = max(region.bbox[2] - region.bbox[0], region.bbox[3] - region.bbox[1])
+        step = max(0.13, span / 18.0)
         with httpx.Client(timeout=20, headers={"User-Agent": "OpenDrop/0.1 (civic open-data)"}) as client:
-            for lat, lon in _grid(region.bbox):
+            for lat, lon in _grid(region.bbox, step):
                 try:
                     r = client.get(API, params={"latitude": lat, "longitude": lon})
                     r.raise_for_status()

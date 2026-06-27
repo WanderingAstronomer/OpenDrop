@@ -33,6 +33,13 @@ That's it. The map loads donation locations for the Columbus, OH metro. Click a 
 
 To stop: `docker compose down` (add `-v` to also wipe the database volume).
 
+### Features
+- **Find / donate / resell:** charity stores, thrift, drop bins, donation centers, mutual aid, and **consignment/resale** shops (sell, don't just donate). The **List** panel is keyboard- and screen-reader-accessible with a category filter.
+- **Search & locate:** address/city search box and a "use my location" control.
+- **Crowd validation:** confirm/deny votes drive a confidence score; the community can retire dead spots.
+- **Photos + pin accuracy:** upload a photo (EXIF-stripped), vote photos helpful/unhelpful, and propose a corrected pin by clicking the map — a correction photo that earns enough helpful votes **auto-moves the pin** (no manual moderation).
+- **Regions:** seed any configured region — `REGION=columbus` (default) or `REGION=ohio` (statewide). Add a metro by adding an entry to [`pipeline/regions.py`](pipeline/regions.py). Example: `REGION=ohio bash scripts/seed.sh`.
+
 ## What's where
 
 | Path | What |
