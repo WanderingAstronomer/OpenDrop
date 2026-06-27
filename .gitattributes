@@ -1,0 +1,18 @@
+# Normalize line endings: keep text as LF in the repo
+* text=auto eol=lf
+
+# Shell scripts MUST stay LF (they run in Linux containers)
+*.sh   text eol=lf
+*.bash text eol=lf
+
+# Windows scripts stay CRLF
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# Binary assets — never touch
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
