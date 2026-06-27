@@ -1,5 +1,6 @@
 import { fetchDetail } from "./api.js";
 import { bucketColor, bucketLabel, esc, orgTypeLabel } from "./confidence.js";
+import { mountPhotos } from "./photos.js";
 import { toast } from "./toast.js";
 import { mountVote } from "./vote.js";
 
@@ -29,8 +30,9 @@ export async function openPopover(map, latlng, id) {
     ${addrHtml(d.address)}
     ${d.hours_raw ? `<div class="hours">🕑 ${esc(d.hours_raw)}</div>` : ""}
     <div class="conf-slot">${confHtml(d)}</div>
-    <div class="vote-area"></div>`;
-  L.popup({ minWidth: 240, maxWidth: 300, autoPan: true })
+    <div class="vote-area"></div>
+    <div class="photos-area"></div>`;
+  L.popup({ minWidth: 250, maxWidth: 310, autoPan: true })
     .setLatLng(latlng)
     .setContent(div)
     .openOn(map);
@@ -38,4 +40,5 @@ export async function openPopover(map, latlng, id) {
     const slot = div.querySelector(".conf-slot");
     if (slot) slot.innerHTML = confHtml(u);
   });
+  mountPhotos(div.querySelector(".photos-area"), d.id, latlng);
 }

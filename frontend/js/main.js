@@ -3,6 +3,7 @@ import { loadMeta } from "./config.js";
 import { getTypes, initList, updateList } from "./list.js";
 import { applyAttribution, initMap } from "./map.js";
 import { initMarkers, render } from "./markers.js";
+import { setMap as setPhotosMap } from "./photos.js";
 import { initSearch } from "./search.js";
 import { initSubmitPanel } from "./submit.js";
 
@@ -58,6 +59,7 @@ async function boot() {
   map = initMap();
   applyAttribution(map, meta.sources);
   initMarkers(map);
+  setPhotosMap(map);
   initSearch(map);
   initList(map, refresh);
   initSubmitPanel();
