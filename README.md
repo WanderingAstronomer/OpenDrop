@@ -66,6 +66,12 @@ docker compose up -d db
 docker compose run --rm api pytest -q
 ```
 
+## License
+
+- **Code:** [AGPL-3.0](LICENSE) — you may use, modify, and self-host freely, but if you run a modified OpenDrop **as a network service**, you must offer your source changes to its users. Chosen to keep the project community-owned and un-enclosable.
+- **Exported dataset** (`/api/export`): **ODbL-1.0** (share-alike + attribution) — because OpenStreetMap is a stored source, the share-alike obligation is viral and applies to the whole dataset.
+- **Community submissions:** released as **CC0** (public domain) so the open dataset stays freely reusable.
+
 ## Data, licensing & ethics
 
 - **OpenStreetMap** data is **ODbL** — attributed on the map and embedded in `/api/export`.
