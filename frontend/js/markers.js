@@ -5,9 +5,26 @@ let map = null;
 let clusterGroup = null;
 let serverLayer = null;
 
+function clusterIcon(cluster) {
+  const n = cluster.getChildCount();
+  const size = n < 10 ? 34 : n < 50 ? 40 : 48;
+  return L.divIcon({
+    html: `<div class="odc-cluster" style="width:${size}px;height:${size}px">${n}</div>`,
+    className: "",
+    iconSize: [size, size],
+  });
+}
+
 export function initMarkers(m) {
   map = m;
-  clusterGroup = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 50 });
+  clusterGroup = L.markerClusterGroup({
+    chunkedLoading: true,
+    maxClusterRadius: 40,        // looser grouping than the default 80 -> neighborhoods separate sooner
+    disableClusteringAtZoom: 16, // street level -> always individual pins (good for bins)
+    showCoverageOnHover: false,  // drop the distracting blue coverage polygon
+    spiderfyOnMaxZoom: true,
+    iconCreateFunction: clusterIcon,
+  });
   map.addLayer(clusterGroup);
   serverLayer = L.layerGroup().addTo(map);
 }
@@ -19,9 +36,9 @@ export function render(data) {
 
   if (data.mode === "clusters") {
     (data.clusters || []).forEach((c) => {
-      const size = Math.round(Math.min(54, 26 + Math.log2(c.count + 1) * 6));
+      const size = Math.round(Math.min(54, 30 + Math.log2(c.count + 1) * 5));
       const icon = L.divIcon({
-        html: `<div class="cluster-bubble" style="width:${size}px;height:${size}px">${c.count}</div>`,
+        html: `<div class="odc-cluster" style="width:${size}px;height:${size}px">${c.count}</div>`,
         className: "",
         iconSize: [size, size],
       });
@@ -36,7 +53,7 @@ export function render(data) {
     const [lon, lat] = f.geometry.coordinates;
     const p = f.properties;
     const marker = L.circleMarker([lat, lon], {
-      radius: 7, weight: 1, color: "#fff", fillColor: bucketColor(p.bucket), fillOpacity: 0.9,
+      radius: 7, weight: 2, color: "#ffffff", fillColor: bucketColor(p.bucket), fillOpacity: 1,
     });
     marker.on("click", () => openPopover(map, marker, p.id));
     clusterGroup.addLayer(marker);
