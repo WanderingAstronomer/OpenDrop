@@ -2,6 +2,7 @@ import { fetchLocations } from "./api.js";
 import { loadMeta } from "./config.js";
 import { applyAttribution, initMap } from "./map.js";
 import { initMarkers, render } from "./markers.js";
+import { initSearch } from "./search.js";
 import { initSubmitPanel } from "./submit.js";
 
 let map = null;
@@ -55,6 +56,7 @@ async function boot() {
   map = initMap();
   applyAttribution(map, meta.sources);
   initMarkers(map);
+  initSearch(map);
   initSubmitPanel();
   map.on("moveend", debouncedRefresh);
   await refresh();

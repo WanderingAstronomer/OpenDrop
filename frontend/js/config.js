@@ -1,5 +1,6 @@
 export const API = "/api";
 export const DEFAULT_VIEW = { center: [39.96, -82.99], zoom: 11 }; // Columbus, OH
+export const MIN_ZOOM = 4; // cap zoom-out so you can't shrink past ~continental US
 
 export const BUCKET_COLORS = { high: "#1a9850", medium: "#f1a340", low: "#d73027" };
 export const ORG_TYPE_LABELS = {

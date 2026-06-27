@@ -1,20 +1,17 @@
-import { DEFAULT_VIEW } from "./config.js";
+import { DEFAULT_VIEW, MIN_ZOOM } from "./config.js";
+import { toast } from "./toast.js";
 
 const OSM_ATTR =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 export function initMap() {
-  // Muted light basemap (OSM-derived via CARTO) — high contrast for the colored markers.
   const streetsLight = L.tileLayer(
     "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
     { maxZoom: 20, subdomains: "abcd", attribution: `${OSM_ATTR} &copy; <a href="https://carto.com/attributions">CARTO</a>` }
   );
-  // Full-detail OSM streets (the classic look).
   const streetsDetailed = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: OSM_ATTR,
+    maxZoom: 19, attribution: OSM_ATTR,
   });
-  // Satellite imagery — drop boxes are often visible from above. Esri World Imagery (no key).
   const satellite = L.tileLayer(
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     { maxZoom: 19, attribution: "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community" }
@@ -24,16 +21,51 @@ export function initMap() {
 
   let saved = null;
   try { saved = localStorage.getItem("opendrop_basemap"); } catch (e) { /* private mode */ }
-  const initial = bases[saved] || streetsLight;
+  const initialName = bases[saved] ? saved : "Streets (light)";
 
-  const map = L.map("map", { zoomControl: true, layers: [initial] })
+  const map = L.map("map", { zoomControl: true, minZoom: MIN_ZOOM, layers: [bases[initialName]] })
     .setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
 
   L.control.layers(bases, {}, { position: "topright", collapsed: false }).addTo(map);
 
+  // Stronger card contrast over dark satellite imagery
+  function applySatClass(name) {
+    map.getContainer().classList.toggle("satellite-active", name === "Satellite");
+  }
+  applySatClass(initialName);
   map.on("baselayerchange", (e) => {
     try { localStorage.setItem("opendrop_basemap", e.name); } catch (err) { /* ignore */ }
+    applySatClass(e.name);
   });
+
+  // "Use my location" control (standard browser geolocation prompt)
+  const Locate = L.Control.extend({
+    options: { position: "topleft" },
+    onAdd() {
+      const a = L.DomUtil.create("a", "leaflet-bar leaflet-control odc-locate");
+      a.href = "#";
+      a.title = "Show my location";
+      a.setAttribute("role", "button");
+      a.setAttribute("aria-label", "Show my location");
+      a.innerHTML = "◎";
+      L.DomEvent.on(a, "click", L.DomEvent.stop).on(a, "click", () =>
+        map.locate({ setView: true, maxZoom: 14, enableHighAccuracy: true })
+      );
+      return a;
+    },
+  });
+  map.addControl(new Locate());
+
+  let youAreHere = null;
+  map.on("locationfound", (e) => {
+    if (youAreHere) map.removeLayer(youAreHere);
+    youAreHere = L.circleMarker(e.latlng, {
+      radius: 8, color: "#2b6cb0", weight: 3, fillColor: "#4a90d9", fillOpacity: 0.6,
+    }).addTo(map).bindTooltip("You are here");
+  });
+  map.on("locationerror", () =>
+    toast("Couldn't get your location — check browser location permissions.", "error")
+  );
 
   return map;
 }
