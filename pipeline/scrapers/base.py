@@ -53,6 +53,29 @@ def _match_dict(d: dict) -> dict:
     return {k: d.get(k) for k in ("lat", "lon", "name", "brand_key", "org_type", "house_number")}
 
 
+def _reconcile(conn, code, policy, region, seen) -> int:
+    """Closure/deletion detection: drop this ingest source's links *within the region's bbox*
+    that were NOT seen in this run (the source no longer lists them). Scoped to the region so a
+    partial/regional sweep can't mass-delete other regions. The source-delete trigger then
+    recomputes affected locations' confidence (a row with no ingest source falls below the floor).
+    Only runs for ingest sources with a non-empty result set (a 0-result run never deletes)."""
+    if policy != "ingest" or not seen or not hasattr(region, "bbox"):
+        return 0
+    s, w, n, e = region.bbox
+    rows = conn.execute(
+        """DELETE FROM location_sources
+           WHERE source_code = %s
+             AND source_geom && ST_MakeEnvelope(%s, %s, %s, %s, 4326)
+             AND NOT (source_ref::text = ANY(%s))
+           RETURNING location_id""",
+        (code, w, s, e, n, list(seen)),
+    ).fetchall()
+    conn.commit()
+    if rows:
+        log.info("%s: reconciled %d closed/absent location-link(s) in region", code, len(rows))
+    return len(rows)
+
+
 def load(scraper: BaseScraper, region, conn) -> dict:
     src = store.get_source(conn, scraper.code)
     if src is None:
@@ -60,6 +83,7 @@ def load(scraper: BaseScraper, region, conn) -> dict:
     policy = src["storage_policy"]
     log_id = store.start_scrape_log(conn, scraper.code)
     fetched = upserted = new = enrich = skipped = 0
+    seen: set[str] = set()
     try:
         for rec in scraper.fetch(region):
             fetched += 1
@@ -93,14 +117,16 @@ def load(scraper: BaseScraper, region, conn) -> dict:
                     loc_id = store.insert_location(conn, d)
                     store.upsert_source(conn, loc_id, scraper.code, rec.source_ref, rec.lon, rec.lat, rec.name, d)
                     new += 1
+            seen.add(rec.source_ref)
             conn.commit()
 
-        detail = {"skipped_no_coords": skipped}
+        removed = _reconcile(conn, scraper.code, policy, region, seen)
+        detail = {"skipped_no_coords": skipped, "removed": removed}
         if policy == "enrich_only":
             detail["enrich_matches"] = enrich
-        store.finish_scrape_log(conn, log_id, "success", fetched, upserted, new, 0, detail)
-        log.info("%s: fetched=%d new=%d upserted=%d enrich=%d skipped=%d",
-                 scraper.code, fetched, new, upserted, enrich, skipped)
+        store.finish_scrape_log(conn, log_id, "success", fetched, upserted, new, removed, detail)
+        log.info("%s: fetched=%d new=%d upserted=%d enrich=%d skipped=%d removed=%d",
+                 scraper.code, fetched, new, upserted, enrich, skipped, removed)
     except Exception as e:  # noqa: BLE001
         conn.rollback()
         store.finish_scrape_log(conn, log_id, "failed", fetched, upserted, new, 0, error=str(e))

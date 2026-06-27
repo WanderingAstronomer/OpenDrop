@@ -189,7 +189,9 @@ DECLARE
 BEGIN
   -- Source component: sum authority of distinct INGEST sources (enrich_only excluded).
   -- v_redist = has >= 1 ingest source (join already filters to ingest).
-  SELECT COALESCE(LEAST(85, SUM(s.authority_weight)), 0),
+  -- NOTE: COALESCE is INSIDE LEAST — LEAST/GREATEST ignore NULLs, so LEAST(85, NULL)
+  -- would wrongly return 85 for a source-less location. COALESCE(SUM,0) first -> 0.
+  SELECT LEAST(85, COALESCE(SUM(s.authority_weight), 0)),
          COUNT(*) > 0
     INTO v_source, v_redist
   FROM (SELECT DISTINCT ls.source_code FROM location_sources ls WHERE ls.location_id = p_location_id) d

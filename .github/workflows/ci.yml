@@ -34,6 +34,8 @@ jobs:
       - name: Apply schema
         run: |
           sudo apt-get update && sudo apt-get install -y postgresql-client
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/0001_init.sql
+          for f in migrations/*.sql; do
+            echo "applying $f"; psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+          done
       - name: Run tests
         run: pytest

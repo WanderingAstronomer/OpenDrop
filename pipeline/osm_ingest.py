@@ -73,7 +73,7 @@ class OsmScraper(BaseScraper):
     code = "osm"
 
     def fetch(self, region):
-        bbox = region or DEFAULT_BBOX
+        bbox = region.bbox_str if hasattr(region, "bbox_str") else (region or DEFAULT_BBOX)
         data = self._overpass(bbox)
         if data is None:
             log.warning("Overpass unavailable; using committed fixture %s", FIXTURE)
@@ -98,10 +98,11 @@ class OsmScraper(BaseScraper):
 
 def main():
     from . import db
+    from .regions import get_region
     logging.basicConfig(level=logging.INFO)
     conn = db.connect()
     try:
-        load(OsmScraper(), DEFAULT_BBOX, conn)
+        load(OsmScraper(), get_region(), conn)
     finally:
         conn.close()
 

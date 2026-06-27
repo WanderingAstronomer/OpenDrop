@@ -121,3 +121,15 @@ def test_export_excludes_non_redistributable(client, conn):
 def test_submit_missing_token_403(client):
     r = client.post("/api/locations", json={"name": "X", "org_type": "drop_bin", "address": {"city": "Columbus"}})
     assert r.status_code == 403
+
+
+@requires_db
+def test_source_removal_retires_location(conn):
+    """Closure detection: a location that loses its last ingest source must drop to
+    confidence 0 / pending — guards the LEAST(85, NULL)=85 source-component bug."""
+    loc = _mk_location(conn, "removal regression", sources=("salvation_army",))
+    assert _status(conn, loc) == "active" and _confidence(conn, loc) == 50.0
+    conn.execute("DELETE FROM location_sources WHERE location_id = %s", (loc,))
+    conn.commit()
+    assert _confidence(conn, loc) == 0.0
+    assert _status(conn, loc) == "pending"

@@ -43,5 +43,22 @@ services:
       - "${WEB_PORT:-8080}:80"
     restart: unless-stopped
 
+  # Opt-in scheduled re-sync (freshness + closure detection). Enable with:
+  #   docker compose --profile scheduler up -d
+  scheduler:
+    image: opendrop-api
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    profiles: ["scheduler"]
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://opendrop:opendrop@db:5432/opendrop}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    command: ["sh", "-c", "while true; do python -m pipeline.sync || true; sleep ${SYNC_INTERVAL_SECONDS:-86400}; done"]
+
 volumes:
   pgdata:

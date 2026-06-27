@@ -13,12 +13,6 @@ log = logging.getLogger("opendrop.salvation_army")
 
 API = "https://satruck.org/apiservices/pickup/donategoods/locations"
 
-# Representative Columbus-metro ZIP centroids; LocationGUID dedupe collapses overlaps.
-COLUMBUS_ZIPS = [
-    "43215", "43004", "43016", "43017", "43026", "43054", "43068", "43081",
-    "43123", "43147", "43204", "43209", "43214", "43219", "43229", "43230", "43235",
-]
-
 
 def _org_type(type_name: str | None) -> str:
     tn = (type_name or "").upper()
@@ -33,7 +27,7 @@ class SalvationArmyScraper(BaseScraper):
     def fetch(self, region):
         seen: set[str] = set()
         with httpx.Client(timeout=30, headers={"User-Agent": "Mozilla/5.0 (OpenDrop civic open-data)"}) as client:
-            for zip_code in COLUMBUS_ZIPS:
+            for zip_code in (region.zips or []):
                 try:
                     r = client.get(API, params={"Type": 3, "ZipCode": zip_code, "otid": 0})
                     r.raise_for_status()
@@ -70,10 +64,11 @@ class SalvationArmyScraper(BaseScraper):
 
 def main():
     from .. import db
+    from ..regions import get_region
     logging.basicConfig(level=logging.INFO)
     conn = db.connect()
     try:
-        load(SalvationArmyScraper(), None, conn)
+        load(SalvationArmyScraper(), get_region(), conn)
     finally:
         conn.close()
 
