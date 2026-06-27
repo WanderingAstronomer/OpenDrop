@@ -16,9 +16,9 @@ The directive authorizes autonomous calls with inline documentation. Three findi
 
 | # | Finding | Assumption affected | Decision |
 |---|---------|--------------------|----------|
-| D1 | **Goodwill's Terms of Use explicitly forbid scraping and reproduction** (technically scrapeable, legally not redistributable). | AGENTS.md Phase 3 names Goodwill as one of the two pattern scrapers. | **Build the Goodwill scraper anyway** as the pattern implementation, but tag the source `storage_policy = enrich_only`: its records are fetched/validated at query time and **never persisted to the redistributable canonical dataset**. Salvation Army becomes the primary *stored* scraper. The directive's intent (demonstrate the scraper interface on two real orgs) is satisfied without violating the "all stored data must be redistributable" principle. |
+| D1 | **Goodwill's Terms of Use explicitly forbid scraping and reproduction** (technically scrapeable, legally not redistributable). | AGENTS.md Phase 3 names Goodwill as one of the two pattern scrapers. | **Build the Goodwill scraper anyway** as the pattern implementation, tagged `storage_policy = enrich_only`. For **v1 it is a scraper-interface pattern demo only**: it fetches + dedup-matches, writes a `scrape_log` audit row, and **persists nothing** to the canonical/redistributable dataset (no `location_sources`, no surfaced data). Salvation Army is the primary *stored* scraper. *(Live query-time enrichment — merging Goodwill fields into a response without storing — is a documented **future extension**, out of scope for v1.)* The directive's intent (demonstrate the scraper interface on two real orgs; treat Goodwill as enrichment-only / never store) is satisfied without violating "all stored data must be redistributable." |
 | D2 | **clothedonations.com exposes its entire 14,655-record geocoded dataset as one open JSON file** — by far the richest single source — but it is a *proprietary aggregation* with no open license. | A naive read says "ingest the biggest dataset." | **Do not store it verbatim.** Use it as a **coverage-validation/QA reference** only (compare our canonical counts against it per state). Build the canonical store from clean first-party sources (OSM + Salvation Army + Planet Aid + USAgain). Revisit only if an explicit license/permission is obtained. |
-| D3 | **PostgreSQL 16 is no longer the newest** (18.4 is current; 19 in beta). 16 is still supported through Nov 2028. | Directive assumes PG 16. | **Bump to PostgreSQL 17** (most battle-tested major with a long support runway, EOL 2029-11). PostGIS 3.6.4 supports it. Non-blocking, low-risk. |
+| D3 | **PostgreSQL 16 is no longer the newest** (18.4 is current; 19 in beta). 16 is still supported through Nov 2028. | Directive assumes PG 16. | **Bump to PostgreSQL 17** (most battle-tested major with a long support runway, EOL 2029-11). PostGIS 3.6.x supports it; deployed image ships PostGIS 3.5 (see Finding 5). Non-blocking, low-risk. |
 
 ---
 
@@ -105,7 +105,8 @@ Every endpoint below was **probed live**. "Ingest" = first-party data, no auth, 
 match(a, b) :=
    brand_equal(a, b)
    AND ( (haversine(a,b) ≤ 300m AND name_sim(a,b) ≥ 0.4)
-         OR (haversine(a,b) ≤ 600m AND street_number_equal(a,b)) )
+         OR (haversine(a,b) ≤ 600m AND name_sim(a,b) ≥ 0.4 AND street_number_equal(a,b)) )
+   -- (separate path for unbranded co-located bins: both brand_key NULL AND same org_type AND ≤25m)
 ```
 with name normalization = lowercase → strip ®/™ & non-alphanumerics → remove noise phrases ("donation center", "thrift store", "outlet", …) and street-type tokens → **canonicalize known brands** (Goodwill / Salvation Army / Volunteers of America / Habitat / …) to a single token.
 
@@ -116,7 +117,7 @@ with name normalization = lowercase → strip ®/™ & non-alphanumerics → rem
 | Component | Directive assumed | Verified current (2026-06-27) | Verdict | Action |
 |---|---|---|---|---|
 | **PostgreSQL** | 16 | 18.4 stable (19 beta). 16 supported to 2028-11. | update | **Use PG 17** (EOL 2029-11; battle-tested). |
-| **PostGIS** | 3.x | **3.6.4** (supports PG 12–18) | ✅ ok | Pin `3.6.x`. |
+| **PostGIS** | 3.x | **3.6.2** latest stable upstream (supports PG 12–18) | ✅ ok | Schema uses no 3.6-only feature; the official **non-alpine `postgis/postgis:17` image ships PostGIS 3.5** (3.6 non-alpine not yet published; `17-3.6-alpine` exists). Pin **`17-3.5`**; 3.6 is a no-impact future bump. |
 | **Leaflet.js** | latest | **1.9.4** is still latest stable (2.0 alpha-only, ESM/breaking) | ✅ ok | Pin `^1.9.4`; prefer ESM-friendly patterns for future 2.0. |
 | **Cloudflare Turnstile** | free CAPTCHA | Confirmed free: 20 widgets/acct, 10 hostnames/widget, **unlimited verifications**. Tokens 300 s, single-use, ≤2048 chars. siteverify: `POST challenges.cloudflare.com/turnstile/v0/siteverify`. | ✅ ok | Managed mode; validate every token server-side with `remoteip`; treat single-use. |
 | **Overpass API** | public `overpass-api.de` | Live; ~2 slots/IP; fair use **<10k req/day, <1 GB/day**, 180 s default timeout. | ⚠️ caution | **Batch-import only**, cache into PostGIS, **never proxy live user queries**. Set explicit `[out:json][timeout:]` + descriptive User-Agent. Self-host if ETL volume grows. |
