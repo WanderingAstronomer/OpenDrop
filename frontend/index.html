@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenDrop — US clothing donation map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin="" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin="" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="map"></div>
+
+  <div id="legend" class="legend">
+    <strong>OpenDrop</strong>
+    <div class="legend-row"><span class="dot high"></span> High confidence</div>
+    <div class="legend-row"><span class="dot medium"></span> Medium</div>
+    <div class="legend-row"><span class="dot low"></span> Low / unverified</div>
+  </div>
+
+  <button id="add-btn" class="add-btn" title="Add a donation location">＋ Add location</button>
+
+  <div id="submit-panel" class="panel hidden" aria-hidden="true"></div>
+  <div id="toast-host" class="toast-host"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
