@@ -1,180 +1,522 @@
+/* ============================================================================
+   OpenDrop — first-class light + dark theming.
+   Light tokens live on :root; dark tokens override on :root[data-theme="dark"].
+   The active theme is resolved before first paint by an inline script in index.html.
+   ========================================================================== */
 :root {
+  color-scheme: light;
+
+  /* surfaces */
+  --surface: #ffffff;
+  --surface-2: #f4f7f9;
+  --surface-3: #e7edf1;
+  --map-base: #eef2f5;
+
+  /* text */
+  --ink: #18242a;
+  --ink-2: #51606a;
+  --ink-3: #69767f;  /* ~4.66:1 on --surface — meets WCAG AA for the small muted text it labels */
+
+  /* lines */
+  --border: #d8dee3;
+  --border-2: #c6ced5;
+
+  /* brand + action */
+  --brand: #15616d;
+  --accent: #2b6cb0;
+  --accent-hover: #2c5282;
+  --accent-soft: #ecf3fb;
+  --on-accent: #ffffff;
+
+  /* confidence */
   --high: #1a9850;
-  --medium: #f1a340;
+  --medium: #e08c2e;
   --low: #d73027;
-  --ink: #1f2933;
-  --panel-bg: #ffffff;
-  --shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+  --high-soft: #e7f5ec;
+  --low-soft: #fdecea;
+
+  /* elevation */
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.08);
+  --shadow: 0 8px 28px rgba(16, 24, 40, 0.14), 0 2px 6px rgba(16, 24, 40, 0.08);
+
+  /* shape */
+  --r-card: 16px;
+  --r-ctl: 12px;
+  --r-input: 10px;
+  --r-pill: 999px;
+  --focus: 0 0 0 3px rgba(43, 108, 176, 0.35);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface: #17242a;
+  --surface-2: #1e2e35;
+  --surface-3: #294049;
+  --map-base: #0e1418;
+
+  --ink: #e8eef1;
+  --ink-2: #abbac2;
+  --ink-3: #7d8f99;
+
+  --border: #2c424b;
+  --border-2: #3a525c;
+
+  --brand: #2a8597;
+  --accent: #4a92d8;
+  --accent-hover: #6aa9e3;
+  --accent-soft: #16314a;
+  --on-accent: #ffffff;
+
+  --high: #3fbf76;
+  --medium: #eaa94e;
+  --low: #ef6a5d;
+  --high-soft: #143425;
+  --low-soft: #3a1f1d;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow: 0 10px 32px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.45);
+
+  --focus: 0 0 0 3px rgba(74, 146, 216, 0.45);
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); }
-#map { position: absolute; inset: 0; }
-
-/* Bottom-left control stack (legend + List button) — keeps the top-left corner
-   free for the Leaflet zoom/locate controls and avoids the legend/List overlap. */
-.map-ctl-bl { position: absolute; bottom: 22px; left: 12px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
-.legend {
-  background: var(--panel-bg); padding: 10px 12px; border-radius: 10px; box-shadow: var(--shadow);
-  font-size: 13px; line-height: 1.7;
+html, body {
+  margin: 0; height: 100%;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--ink); background: var(--map-base);
 }
-.legend strong { display: block; font-size: 15px; margin-bottom: 4px; }
-.legend-row { display: flex; align-items: center; gap: 6px; }
+#map { position: absolute; inset: 0; background: var(--map-base); }
 
-.dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.15); }
-.dot.high { background: var(--high); }
-.dot.medium { background: var(--medium); }
-.dot.low { background: var(--low); }
+:focus-visible { outline: none; box-shadow: var(--focus); border-radius: 6px; }
 
+/* ---- shared button system ------------------------------------------------ */
+.btn {
+  appearance: none; border: 1px solid transparent; border-radius: var(--r-input);
+  padding: 9px 14px; font-size: 14px; font-weight: 600; cursor: pointer;
+  background: var(--surface-3); color: var(--ink); line-height: 1.2;
+  transition: background .15s, border-color .15s, color .15s, transform .05s;
+}
+.btn:hover { background: var(--surface-2); }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: .6; cursor: default; }
+.btn.primary { background: var(--accent); color: var(--on-accent); }
+.btn.primary:hover { background: var(--accent-hover); }
+.btn.ghost { background: var(--surface); border-color: var(--border); color: var(--ink); }
+.btn.ghost:hover { background: var(--surface-2); border-color: var(--border-2); }
+.btn.tiny { padding: 6px 10px; font-size: 12.5px; border-radius: 8px; }
+
+/* ---- shared inputs ------------------------------------------------------- */
+label { display: block; font-size: 12px; margin: 10px 0 3px; color: var(--ink-2); font-weight: 600; }
+input, select, textarea {
+  width: 100%; padding: 9px 11px; font-size: 14px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--r-input);
+}
+input::placeholder { color: var(--ink-3); }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus); }
+
+/* ---- segmented control --------------------------------------------------- */
+.seg { display: inline-flex; background: var(--surface-3); border-radius: 10px; padding: 3px; gap: 2px; }
+.seg button {
+  flex: 1; border: none; background: transparent; color: var(--ink-2);
+  padding: 7px 10px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.seg button.on, .seg button.chosen { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
+
+/* ---- lazy Turnstile host: takes space only once a widget is live ---------- */
+.ts:not(.ts-live) { display: none; }
+.ts.ts-live { margin: 8px 0; min-height: 62px; }
+
+/* ============================ MAP CHROME ================================== */
+
+/* Bottom-left control stack (legend + List/theme buttons) */
+.map-ctl-bl { position: absolute; bottom: 22px; left: 12px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.ctl-row { display: flex; gap: 8px; }
+.legend {
+  background: var(--surface); color: var(--ink); padding: 11px 13px; border-radius: var(--r-ctl);
+  box-shadow: var(--shadow); border: 1px solid var(--border); font-size: 13px; line-height: 1.7;
+}
+.legend strong { display: block; font-size: 15px; margin-bottom: 5px; color: var(--brand); }
+.legend-row { display: flex; align-items: center; gap: 7px; }
+
+.dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1px solid var(--surface); box-shadow: 0 0 0 1px rgba(0, 0, 0, .12); }
+/* Legend swatches are pinned to the fixed marker palette (BUCKET_COLORS in config.js)
+   so they always match the pins on the map, in either theme. The semantic --high/--medium/
+   --low tokens drive themeable UI accents (soft fills, hover borders) and may differ. */
+.dot.high { background: #1a9850; }
+.dot.medium { background: #f1a340; }
+.dot.low { background: #d73027; }
+
+.list-toggle, .icon-btn {
+  background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+  border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow);
+}
+.list-toggle:hover, .icon-btn:hover { background: var(--surface-2); }
+.icon-btn { padding: 8px 11px; font-size: 16px; line-height: 1; }
+.theme-toggle { font-size: 17px; }
+
+/* Add button (primary CTA) */
 .add-btn {
   position: absolute; right: 16px; bottom: 24px; z-index: 1000;
-  background: #2b6cb0; color: #fff; border: none; border-radius: 24px;
-  padding: 12px 18px; font-size: 15px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow);
+  background: var(--accent); color: var(--on-accent); border: none; border-radius: var(--r-pill);
+  padding: 13px 20px; font-size: 15px; font-weight: 700; cursor: pointer; box-shadow: var(--shadow);
 }
-.add-btn:hover { background: #2c5282; }
-
-.panel {
-  position: absolute; right: 16px; bottom: 80px; z-index: 1001; width: 320px; max-width: calc(100vw - 32px);
-  background: var(--panel-bg); border-radius: 12px; box-shadow: var(--shadow); padding: 16px;
-}
-.panel.hidden { display: none; }
-.panel h2 { margin: 0 0 10px; font-size: 17px; }
-.panel label { display: block; font-size: 12px; margin: 8px 0 2px; color: #52606d; }
-.panel input, .panel select { width: 100%; padding: 8px; border: 1px solid #cbd2d9; border-radius: 8px; font-size: 14px; }
-.panel .row { display: flex; gap: 8px; }
-.panel .row > * { flex: 1; }
-.panel .actions { display: flex; gap: 8px; margin-top: 12px; }
-.panel button { padding: 9px 12px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.panel button.primary { background: #2b6cb0; color: #fff; flex: 1; }
-.panel button.ghost { background: #e4e7eb; color: var(--ink); }
-
-.popover h3 { margin: 0 0 4px; font-size: 16px; }
-.popover .meta { color: #52606d; font-size: 12.5px; margin-bottom: 6px; }
-.popover .addr, .popover .hours { font-size: 13px; margin: 3px 0; }
-.popover .conf { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 8px 0; }
-.popover .vote-area { margin-top: 8px; border-top: 1px solid #eef1f4; padding-top: 8px; }
-.popover .btns { display: flex; gap: 8px; margin-top: 8px; }
-.popover .btns button { flex: 1; padding: 7px; border: 1px solid #cbd2d9; background: #fff; border-radius: 8px; cursor: pointer; font-size: 13px; }
-.popover .btns button.confirm:hover { background: #e6f4ea; border-color: var(--high); }
-.popover .btns button.deny:hover { background: #fdecea; border-color: var(--low); }
-
-.toast-host { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 2000; display: flex; flex-direction: column; gap: 8px; align-items: center; }
-.toast { background: #323f4b; color: #fff; padding: 10px 16px; border-radius: 20px; font-size: 13px; opacity: 0; transform: translateY(8px); transition: all .25s; box-shadow: var(--shadow); }
-.toast.show { opacity: 1; transform: translateY(0); }
-.toast.success { background: #1a7f4b; }
-.toast.error { background: #b03030; }
-
-/* Cluster icon — deep teal so it (a) contrasts on both the light basemap and satellite
-   imagery, and (b) is visually distinct from the green/amber/red confidence markers. */
-.odc-cluster {
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 50%;
-  background: #15616d; color: #fff; font-weight: 700; font-size: 13px;
-  border: 2px solid #ffffff; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
-}
-.odc-cluster:hover { background: #1d7a8c; }
+.add-btn:hover { background: var(--accent-hover); }
 
 /* Search box (top-center) */
-.search { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1200; width: min(380px, calc(100vw - 130px)); }
+.search { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1200; width: min(400px, calc(100vw - 130px)); }
 .search input {
-  width: 100%; padding: 10px 14px; border: 1px solid #cbd2d9; border-radius: 22px;
-  font-size: 14px; box-shadow: var(--shadow); background: #fff; outline: none;
+  width: 100%; padding: 11px 16px; border: 1px solid var(--border); border-radius: var(--r-pill);
+  font-size: 14px; box-shadow: var(--shadow); background: var(--surface); color: var(--ink);
 }
-.search input:focus { border-color: #2b6cb0; box-shadow: 0 0 0 2px rgba(43,108,176,.25), var(--shadow); }
+.search input:focus { border-color: var(--accent); box-shadow: var(--focus), var(--shadow); }
 .search-results {
-  list-style: none; margin: 6px 0 0; padding: 4px; background: #fff; border-radius: 10px;
-  box-shadow: var(--shadow); max-height: 50vh; overflow-y: auto;
+  list-style: none; margin: 6px 0 0; padding: 5px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-ctl); box-shadow: var(--shadow); max-height: 50vh; overflow-y: auto;
 }
 .search-results:empty { display: none; }
-.search-results li { padding: 8px 10px; border-radius: 7px; font-size: 13px; cursor: pointer; }
-.search-results li[data-pick]:hover, .search-results li[data-pick]:focus { background: #eef4fb; outline: none; }
-.search-results li.empty { color: #7b8794; cursor: default; }
+.search-results li { padding: 9px 11px; border-radius: 8px; font-size: 13px; cursor: pointer; color: var(--ink); }
+.search-results li[data-pick]:hover, .search-results li[data-pick]:focus,
+.search-results li[data-pick].active { background: var(--accent-soft); outline: none; }
+.search-results li[data-pick].active { box-shadow: inset 2px 0 0 var(--accent); }
+.search-results li.empty { color: var(--ink-3); cursor: default; }
 
-/* Loading / empty / error banner — sits just below the search box */
+/* Loading / empty / error banner */
 .map-status {
   position: absolute; top: 64px; left: 50%; transform: translateX(-50%); z-index: 1100;
-  background: rgba(31, 41, 51, 0.92); color: #fff; padding: 8px 16px; border-radius: 20px;
+  background: rgba(16, 24, 40, 0.92); color: #fff; padding: 9px 16px; border-radius: var(--r-pill);
   font-size: 13px; box-shadow: var(--shadow); max-width: 80vw; text-align: center;
 }
 .map-status[hidden] { display: none; }
 
-/* "Use my location" control glyph */
-.odc-locate { font-size: 18px; font-weight: 700; line-height: 26px; text-align: center; color: #2b6cb0; }
+/* Locate control glyph */
+.odc-locate { font-size: 18px; font-weight: 700; line-height: 26px; text-align: center; color: var(--accent); }
 
-/* Stronger separation for white chrome over dark satellite imagery */
-.satellite-active .legend,
-.satellite-active .search input,
-.satellite-active .panel { border: 1px solid rgba(0, 0, 0, 0.3); box-shadow: 0 2px 16px rgba(0, 0, 0, 0.5); }
-.satellite-active .legend .legend-row,
-.satellite-active .popover .meta { color: #1f2933; }
-
-/* Accessible list view (keyboard + screen-reader path to every location) */
-.list-toggle {
-  background: #fff; border: 1px solid #cbd2d9; border-radius: 8px; padding: 7px 12px;
-  font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow);
+/* Cluster icon */
+.odc-cluster {
+  display: flex; align-items: center; justify-content: center; border-radius: 50%;
+  background: var(--brand); color: #fff; font-weight: 700; font-size: 13px;
+  border: 2px solid #ffffff; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
 }
-.list-toggle:hover { background: #f5f7fa; }
-.list-close { margin-left: 4px; background: none; border: none; font-size: 16px; cursor: pointer; color: #52606d; padding: 2px 6px; border-radius: 6px; }
-.list-close:hover { color: #1f2933; background: #eef1f4; }
+.odc-cluster:hover { filter: brightness(1.1); }
+
+/* Drag-pin tooltip */
+.pin-tip { font-weight: 600; }
+
+/* ============================ POPOVER ==================================== */
+.po-popup .leaflet-popup-content-wrapper {
+  background: var(--surface); color: var(--ink); border-radius: var(--r-card);
+  box-shadow: var(--shadow); border: 1px solid var(--border); padding: 0;
+}
+/* margin:0 so our own .popover padding controls spacing — but DON'T touch width:
+   Leaflet sets an inline width here to honour the popup's minWidth/maxWidth. */
+.po-popup .leaflet-popup-content { margin: 0; }
+.po-popup .leaflet-popup-tip { background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); }
+.po-popup .leaflet-popup-close-button { color: var(--ink-3); padding: 8px 9px 0 0; }
+.po-popup .leaflet-popup-close-button:hover { color: var(--ink); }
+
+.popover { padding: 14px 16px; }
+.po-head { padding-right: 14px; margin-bottom: 10px; }
+.po-title { margin: 0; font-size: 17px; font-weight: 700; line-height: 1.25; color: var(--ink); }
+.po-sub { color: var(--ink-2); font-size: 12.5px; margin-top: 3px; }
+
+.po-body { display: flex; flex-direction: column; gap: 9px; }
+.po-row { display: flex; gap: 8px; font-size: 13px; line-height: 1.45; color: var(--ink); }
+.po-ic { flex: none; width: 16px; text-align: center; }
+.po-links { display: flex; gap: 14px; font-size: 13px; }
+.po-links a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.po-links a:hover { text-decoration: underline; }
+
+.po-conf {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 9px 11px; background: var(--surface-2); border-radius: var(--r-input); font-size: 12.5px;
+}
+.conf-label { font-weight: 700; }
+.conf-score {
+  font-variant-numeric: tabular-nums; color: var(--ink-2); background: var(--surface-3);
+  border-radius: 6px; padding: 1px 6px; font-weight: 600;
+}
+.conf-tally { margin-left: auto; color: var(--ink-2); white-space: nowrap; }
+
+/* divider between sections */
+.vote-area, .corrections-area:not(:empty), .fieldedits-area:not(:empty), .signals-area, .photos-area, .po-foot {
+  border-top: 1px solid var(--border); padding-top: 10px; margin-top: 1px;
+}
+.corrections-area:empty, .fieldedits-area:empty { display: none; }
+
+.vote-q { font-size: 12.5px; color: var(--ink-2); margin: 0 0 7px; font-weight: 600; }
+.vote-btns { display: flex; gap: 8px; }
+.vote-btns .btn { flex: 1; }
+.vote-btns .confirm:hover { background: var(--high-soft); border-color: var(--high); }
+.vote-btns .deny:hover { background: var(--low-soft); border-color: var(--low); }
+
+/* pending pin-move suggestions */
+.po-fixes-t { font-size: 12.5px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+.po-fix { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-input); padding: 9px 10px; margin-bottom: 6px; }
+.fix-note { font-size: 12.5px; font-style: italic; color: var(--ink); margin-bottom: 4px; }
+.fix-meter { font-size: 11.5px; color: var(--ink-2); margin-bottom: 6px; }
+.fix-btns { display: flex; gap: 6px; }
+.fix-btns .btn { flex: 1; }
+.fix-btns .confirm:hover { background: var(--high-soft); border-color: var(--high); }
+.fix-btns .deny:hover { background: var(--low-soft); border-color: var(--low); }
+
+/* community signals */
+.sig-title { font-size: 12.5px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+.sig-rows { display: flex; flex-direction: column; gap: 5px; }
+.sig-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.sig-label { color: var(--ink); }
+.sig-data { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.sig-empty { color: var(--ink-3); font-style: italic; }
+.sig-val { color: var(--ink); font-weight: 600; }
+.sig-n { background: var(--surface-3); border-radius: var(--r-pill); padding: 0 7px; font-size: 11px; min-width: 18px; text-align: center; }
+.sig-meter { display: inline-flex; gap: 3px; }
+.seg-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--surface-3); }
+.seg-dot.on { background: var(--accent); }
+
+.sig-rate-toggle {
+  margin-top: 8px; background: none; border: none; color: var(--accent);
+  font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 2px 0;
+}
+.sig-rate-toggle:hover { text-decoration: underline; }
+.sig-rate { margin-top: 8px; display: flex; flex-direction: column; gap: 9px; }
+/* The rate panel is collapsed via the `hidden` attribute until the toggle opens it.
+   This class rule would otherwise out-cascade [hidden]'s display:none, so restore it. */
+.sig-rate[hidden] { display: none; }
+.rate-grp { display: flex; flex-direction: column; gap: 5px; }
+.rate-l { font-size: 12px; color: var(--ink-2); font-weight: 600; }
+.stepper { display: flex; align-items: center; gap: 8px; }
+.stepper button { width: 32px; height: 32px; border: 1px solid var(--border-2); background: var(--surface); color: var(--ink); border-radius: 8px; font-size: 16px; cursor: pointer; padding: 0; }
+.stepper button:hover { background: var(--surface-2); }
+.stepper output { min-width: 30px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stepper .bins-save { width: auto; padding: 0 14px; background: var(--accent); color: var(--on-accent); border-color: transparent; font-size: 13px; font-weight: 600; }
+
+/* photos */
+.po-foot { display: flex; gap: 8px; }
+.po-foot .btn { flex: 1; }
+.ph-top img.ph-thumb { width: 100%; max-height: 130px; object-fit: cover; border-radius: var(--r-input); cursor: pointer; margin-bottom: 8px; }
+.ph-actions { display: flex; gap: 8px; }
+.ph-actions .btn { flex: 1; }
+
+/* ============================ PIN SHEET (correction) ===================== */
+.pin-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 1600;
+  display: flex; justify-content: center; padding: 0 12px 18px; pointer-events: none;
+}
+.sheet-card {
+  pointer-events: auto; width: min(420px, 100%); background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow); padding: 14px 16px;
+}
+.sheet-head { display: flex; align-items: center; margin-bottom: 4px; }
+.sheet-head strong { font-size: 16px; flex: 1; }
+.sheet-x { background: none; border: none; font-size: 17px; cursor: pointer; color: var(--ink-3); padding: 2px 4px; }
+.sheet-x:hover { color: var(--ink); }
+.sheet-sub { margin: 0 0 6px; font-size: 13px; color: var(--ink-2); }
+.sheet-tier { margin: 0 0 10px; font-size: 12.5px; color: var(--ink); background: var(--accent-soft); border-radius: var(--r-input); padding: 8px 10px; }
+.sheet-note-l { margin-top: 0; }
+.opt { color: var(--ink-3); font-weight: 400; }
+.sheet-gps { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0 4px; font-size: 13px; color: var(--ink); font-weight: 500; cursor: pointer; }
+.sheet-gps input { width: auto; margin-top: 2px; }
+.sheet-priv { margin: 0 0 4px; font-size: 11.5px; color: var(--ink-3); line-height: 1.5; }
+.sheet-actions { display: flex; gap: 8px; margin-top: 10px; }
+.sheet-actions .primary { flex: 1; }
+
+/* snap-to-my-location buttons (drop-a-pin + correction sheets) */
+.pin-snap, .corr-snap { width: 100%; margin-top: 8px; }
+
+/* ---- detail-change ("edit details") sheet + popover rows ---- */
+.fe-seg { display: flex; width: 100%; margin-bottom: 2px; }
+.fe-input { margin-top: 2px; }
+.fe-input .row { display: flex; gap: 8px; }
+.fe-input .row > * { flex: 1; }
+.fe-input .row > *:nth-child(2) { flex: 0 0 64px; }   /* state: just two letters */
+.fe-org-new { margin-top: 6px; }
+.fix-what { font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+
+/* "tap again to clear" hint under the rating controls */
+.rate-hint { font-size: 11.5px; color: var(--ink-3); margin: 0; }
+
+/* ============================ SUBMIT PANEL ============================== */
+.panel {
+  position: absolute; right: 16px; bottom: 80px; z-index: 1001; width: 340px; max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 110px); overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow); padding: 16px 18px;
+}
+.panel.hidden { display: none; }
+.panel h2 { margin: 0 0 12px; font-size: 18px; color: var(--ink); }
+.panel .mode-seg { display: flex; width: 100%; }
+.panel .row { display: flex; gap: 8px; }
+.panel .row > * { flex: 1; }
+.panel .pin-hint { font-size: 12.5px; color: var(--ink); background: var(--accent-soft); border-radius: var(--r-input); padding: 9px 11px; margin: 12px 0 2px; }
+.panel .actions { display: flex; gap: 8px; margin-top: 14px; }
+.panel .actions .primary { flex: 1; }
+
+/* ============================ TOASTS ==================================== */
+.toast-host { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 2200; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.toast { background: #2a3640; color: #fff; padding: 11px 18px; border-radius: var(--r-pill); font-size: 13px; opacity: 0; transform: translateY(8px); transition: all .25s; box-shadow: var(--shadow); max-width: 90vw; text-align: center; }
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.success { background: #1a7f4b; }
+.toast.error { background: #b03030; }
+
+/* ============================ LIST PANEL ================================ */
+.list-close { margin-left: 4px; background: none; border: none; font-size: 16px; cursor: pointer; color: var(--ink-2); padding: 2px 6px; border-radius: 6px; }
+.list-close:hover { color: var(--ink); background: var(--surface-3); }
 .list-panel {
   position: absolute; top: 0; left: 0; bottom: 0; z-index: 1300; width: min(340px, 85vw);
-  background: #fff; box-shadow: var(--shadow); transform: translateX(-100%);
-  transition: transform 0.2s ease; display: flex; flex-direction: column;
+  background: var(--surface); box-shadow: var(--shadow); border-right: 1px solid var(--border);
+  transform: translateX(-100%); transition: transform 0.2s ease; display: flex; flex-direction: column;
 }
 .list-panel.open { transform: translateX(0); }
-.list-head { display: flex; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid #eef1f4; }
-.list-head label { font-size: 13px; color: #52606d; }
-.list-head select { flex: 1; padding: 6px; border: 1px solid #cbd2d9; border-radius: 7px; font-size: 13px; }
-.list-count { font-size: 12px; color: #7b8794; white-space: nowrap; }
+.list-head { display: flex; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border); }
+.list-head label { margin: 0; font-size: 13px; color: var(--ink-2); }
+.list-head select { flex: 1; }
+.list-count { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
 .list-results { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; }
-.list-empty { padding: 16px; color: #7b8794; font-size: 13px; text-align: center; }
+.list-empty { padding: 16px; color: var(--ink-3); font-size: 13px; text-align: center; }
 .list-item {
   display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
-  background: none; border: none; border-radius: 8px; padding: 8px 10px; cursor: pointer; font-size: 13px;
+  background: none; border: none; border-radius: 8px; padding: 9px 10px; cursor: pointer; font-size: 13px; color: var(--ink);
 }
-.list-item:hover, .list-item:focus { background: #eef4fb; outline: 2px solid #2b6cb0; outline-offset: -2px; }
+.list-item:hover, .list-item:focus { background: var(--accent-soft); outline: 2px solid var(--accent); outline-offset: -2px; }
 .li-name { font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.li-type { color: #7b8794; font-size: 11.5px; white-space: nowrap; }
+.li-type { color: var(--ink-3); font-size: 11.5px; white-space: nowrap; }
 
-/* Photos in the popover */
-.photos-area { margin-top: 8px; border-top: 1px solid #eef1f4; padding-top: 8px; }
-.ph-top img.ph-thumb { width: 100%; max-height: 130px; object-fit: cover; border-radius: 8px; cursor: pointer; margin-bottom: 6px; }
-.ph-actions { display: flex; gap: 6px; }
-.ph-actions button { flex: 1; padding: 6px; border: 1px solid #cbd2d9; background: #fff; border-radius: 8px; cursor: pointer; font-size: 12px; }
-.ph-actions button:hover, .ph-actions button:focus { background: #eef4fb; }
-
-/* Photo modal (gallery + upload) */
-.photo-modal { position: absolute; inset: 0; z-index: 2000; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.45); }
+/* ============================ PHOTO MODAL ============================== */
+.photo-modal { position: absolute; inset: 0; z-index: 2000; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, .5); }
 .photo-modal.open { display: flex; }
-.photo-modal.picking { background: transparent; pointer-events: none; align-items: flex-start; }
-.photo-modal.picking .modal-card { pointer-events: auto; margin-top: 14px; }
-.photo-card { background: #fff; border-radius: 12px; box-shadow: var(--shadow); width: min(560px, 92vw); max-height: 88vh; overflow: auto; padding: 14px; }
-.modal-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.photo-card { background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow); width: min(560px, 92vw); max-height: 88vh; overflow: auto; padding: 16px; }
+.modal-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .modal-head strong { font-size: 16px; flex: 1; }
-.modal-close { background: none; border: none; font-size: 18px; cursor: pointer; color: #52606d; }
-.ph-low { font-size: 12px; color: #52606d; display: flex; align-items: center; gap: 4px; }
+.modal-close { background: none; border: none; font-size: 18px; cursor: pointer; color: var(--ink-2); }
+.modal-close:hover { color: var(--ink); }
+.ph-low { font-size: 12px; color: var(--ink-2); display: flex; align-items: center; gap: 4px; margin: 0; font-weight: 500; }
+.ph-low input { width: auto; }
 .ph-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
-.ph-empty { color: #7b8794; font-size: 13px; text-align: center; padding: 20px; grid-column: 1 / -1; }
-.ph-card-item { border: 1px solid #eef1f4; border-radius: 8px; overflow: hidden; }
+.ph-empty { color: var(--ink-3); font-size: 13px; text-align: center; padding: 20px; grid-column: 1 / -1; }
+.ph-card-item { border: 1px solid var(--border); border-radius: var(--r-input); overflow: hidden; background: var(--surface-2); }
 .ph-card-item img { width: 100%; height: 110px; object-fit: cover; display: block; }
-.ph-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; font-size: 11.5px; }
-.ph-score { margin-left: auto; color: #52606d; }
-.ph-badge { background: #e6f0fb; color: #2b6cb0; border-radius: 10px; padding: 1px 6px; font-size: 10.5px; }
-.ph-badge.low { background: #fdecea; color: #b03030; text-transform: capitalize; }
-.ph-votes { display: flex; gap: 4px; padding: 0 8px 8px; }
-.ph-votes button { flex: 1; padding: 5px; border: 1px solid #cbd2d9; background: #fff; border-radius: 7px; cursor: pointer; font-size: 11.5px; }
-.ph-votes button:hover, .ph-votes button:focus { background: #eef4fb; }
+.ph-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; font-size: 11.5px; color: var(--ink); }
+.ph-score { margin-left: auto; color: var(--ink-2); }
+.ph-badge { background: var(--accent-soft); color: var(--accent); border-radius: var(--r-pill); padding: 1px 7px; font-size: 10.5px; }
+.ph-badge.low { background: var(--low-soft); color: var(--low); text-transform: capitalize; }
+.ph-ts { padding: 0 8px; }
+.ph-votes { display: flex; gap: 6px; padding: 6px 8px 8px; }
+.ph-votes .btn { flex: 1; }
 .ph-upload input[type="file"] { display: block; width: 100%; margin-bottom: 8px; font-size: 13px; }
-.ph-fix { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 6px 0; }
-.ph-fixhint { font-size: 12px; color: #52606d; background: #f5f7fa; border-radius: 8px; padding: 8px; }
+.ph-hint { font-size: 12.5px; color: var(--ink-2); background: var(--surface-2); border-radius: var(--r-input); padding: 9px 11px; }
 .modal-actions { display: flex; gap: 8px; margin-top: 12px; }
-.modal-actions button { padding: 9px 12px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.modal-actions button.primary { background: #2b6cb0; color: #fff; flex: 1; }
-.modal-actions button.ghost { background: #e4e7eb; color: var(--ink); }
+.modal-actions .primary { flex: 1; }
+img.ph-broken { object-fit: contain; background: var(--surface-2); }
 
-/* Respect users who prefer reduced motion */
+/* ---- report (location + photo) ---- */
+.btn.danger { color: var(--low); border-color: var(--low-soft); }
+.btn.danger:hover { background: var(--low-soft); border-color: var(--low); }
+.po-report:not(:empty) { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.po-report-hint { font-size: 12px; color: var(--ink-2); }
+.po-report-reason, .ph-report-reason {
+  width: 100%; box-sizing: border-box; padding: 7px 9px; font-size: 13px;
+  border: 1px solid var(--border-2); border-radius: var(--r-input);
+  background: var(--surface); color: var(--ink);
+}
+.po-report-actions, .ph-report-actions { display: flex; gap: 6px; }
+.po-report-actions .btn, .ph-report-actions .btn { flex: 1; }
+.ph-report:not(:empty) { display: flex; flex-direction: column; gap: 6px; padding: 0 8px 8px; }
+
+/* ============================ BASEMAP SWITCHER ========================= */
+/* Restyle Leaflet's default top-right layers control into a tidy titled card with
+   segmented-looking radio rows. The native control keeps doing the work (radios,
+   baselayerchange); this is purely cosmetic. */
+.leaflet-control-layers.odc-basemaps {
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border); border-radius: var(--r-ctl);
+  box-shadow: var(--shadow); padding: 8px; min-width: 130px;
+}
+.odc-basemaps .leaflet-control-layers-list { margin: 0; }
+.odc-basemaps-t {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ink-3); padding: 0 5px 6px;
+}
+.odc-basemaps label {
+  display: flex; align-items: center; gap: 9px; margin: 0; padding: 7px 9px;
+  border-radius: var(--r-input); font-size: 13px; font-weight: 600;
+  color: var(--ink-2); cursor: pointer;
+}
+.odc-basemaps label + label { margin-top: 2px; }
+.odc-basemaps label:hover { background: var(--surface-2); color: var(--ink); }
+.odc-basemaps label:has(input:checked) { background: var(--accent-soft); color: var(--accent); }
+.odc-basemaps label input[type="radio"] { width: auto; margin: 0; accent-color: var(--accent); }
+.odc-basemaps label span { line-height: 1.1; }
+
+/* ============================ LEAFLET DARK CHROME ====================== */
+:root[data-theme="dark"] .leaflet-bar a,
+:root[data-theme="dark"] .leaflet-control-layers {
+  background: var(--surface); color: var(--ink); border-color: var(--border);
+}
+:root[data-theme="dark"] .leaflet-bar a { border-bottom-color: var(--border); }
+:root[data-theme="dark"] .leaflet-bar a:hover { background: var(--surface-2); }
+:root[data-theme="dark"] .leaflet-control-layers-toggle { filter: invert(0.9) hue-rotate(180deg); }
+:root[data-theme="dark"] .leaflet-control-layers-expanded { color: var(--ink); }
+:root[data-theme="dark"] .leaflet-control-attribution {
+  background: rgba(23, 36, 42, 0.85) !important; color: var(--ink-2) !important;
+}
+:root[data-theme="dark"] .leaflet-control-attribution a { color: var(--accent); }
+/* Lift the basemap a touch so the dark UI doesn't sit on stark white tiles */
+:root[data-theme="dark"] .leaflet-tile-pane { filter: brightness(0.92) contrast(0.96); }
+
+/* Stronger card separation over dark satellite imagery (both themes) */
+.satellite-active .legend,
+.satellite-active .search input,
+.satellite-active .panel,
+.satellite-active .po-popup .leaflet-popup-content-wrapper { box-shadow: 0 2px 18px rgba(0, 0, 0, 0.55); }
+
+/* ============================ MOTION =================================== */
 @media (prefers-reduced-motion: reduce) {
   .toast { transition: opacity 0.01ms; }
   .list-panel { transition: none; }
+  .btn:active { transform: none; }
   html { scroll-behavior: auto; }
+}
+
+/* ============================ LEGEND LINKS ============================= */
+.legend-links {
+  margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--ink-3); line-height: 1.5;
+}
+.legend-links a { color: var(--ink-2); text-decoration: none; }
+.legend-links a:hover { color: var(--accent); text-decoration: underline; }
+
+/* The "you agree to…" consent line under submit / upload actions */
+.consent-line {
+  margin: 8px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--ink-3);
+}
+.consent-line a { color: var(--accent); text-decoration: none; }
+.consent-line a:hover { text-decoration: underline; }
+
+/* ============================ LEGAL PAGES ============================= */
+.legal-body {
+  margin: 0; background: var(--surface-2); color: var(--ink);
+  font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.legal {
+  max-width: 760px; margin: 0 auto; padding: 40px 22px 72px;
+  background: var(--surface);
+  border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+  min-height: 100vh;
+}
+.legal h1 { font-size: 28px; line-height: 1.2; margin: 6px 0 4px; color: var(--brand); }
+.legal h2 { font-size: 18px; margin: 30px 0 8px; color: var(--ink); }
+.legal p, .legal li { color: var(--ink); }
+.legal a { color: var(--accent); }
+.legal ul { padding-left: 22px; }
+.legal li { margin: 6px 0; }
+.legal code {
+  background: var(--surface-3); padding: 1px 5px; border-radius: 5px;
+  font-size: 0.9em; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.legal-top { margin: 0 0 18px; }
+.legal-top a, .legal-foot a { color: var(--accent); text-decoration: none; }
+.legal-top a:hover, .legal-foot a:hover { text-decoration: underline; }
+.legal-meta { color: var(--ink-3); font-size: 13.5px; margin: 0 0 18px; }
+.legal-foot {
+  margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--border);
+  font-size: 14px; color: var(--ink-3);
 }

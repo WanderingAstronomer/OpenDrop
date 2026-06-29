@@ -1,11 +1,12 @@
 import { fetchLocations } from "./api.js";
 import { loadMeta } from "./config.js";
 import { getTypes, initList, updateList } from "./list.js";
-import { applyAttribution, initMap } from "./map.js";
+import { applyAttribution, fitToCoverage, initMap } from "./map.js";
 import { initMarkers, render } from "./markers.js";
-import { setMap as setPhotosMap } from "./photos.js";
 import { initSearch } from "./search.js";
+import { app } from "./state.js";
 import { initSubmitPanel } from "./submit.js";
+import { initTheme } from "./theme.js";
 
 let map = null;
 let debounceTimer = null;
@@ -55,11 +56,14 @@ function debouncedRefresh() {
 }
 
 async function boot() {
+  initTheme();
   const meta = await loadMeta();
   map = initMap();
+  fitToCoverage(map, meta.coverage);
+  app.map = map;
+  app.refresh = debouncedRefresh;
   applyAttribution(map, meta.sources);
   initMarkers(map);
-  setPhotosMap(map);
   initSearch(map);
   initList(map, refresh);
   initSubmitPanel();

@@ -1,8 +1,8 @@
 # OpenDrop — Data Model
 
-> Full PostGIS schema in SQL DDL. This is the canonical contract: every table, column, type, index, constraint, function, and trigger Phase 3 implements. The migration file [`migrations/0001_init.sql`](../migrations/) is the verbatim source of truth; this document is its annotated form. Target: **PostgreSQL 17 + PostGIS 3.5** — the official non-alpine `postgis/postgis:17` image currently ships PostGIS **3.5**; PostGIS 3.6 is current upstream but its non-alpine PG17 image is not yet published, and OpenDrop's schema uses **no 3.6-only feature** (all spatial functions used exist since PostGIS ≤3.0). See [FINDINGS.md](../research/FINDINGS.md) Finding 5 / decision D3.
+> Full PostGIS schema in SQL DDL. This is the canonical contract: every table, column, type, index, constraint, function, and trigger Phase 3 implements. The schema now spans the migration chain [`migrations/0001_init.sql` … `0007_correction_anchor_and_retire_fix.sql`](../migrations/), applied in order; those files are the verbatim source of truth and this document is their annotated form. `0001_init.sql` lays the base PostGIS schema; **`0002_fix_source_component.sql`** fixes the source-component confidence bug (`LEAST(85, NULL)=85` → `COALESCE(SUM(…),0)`); **`0003_add_consignment.sql`** adds the `consignment` `org_type`; **`0004_images.sql`** adds the community-photo tables, `image_status` enum, and `recompute_image()` + `trg_after_image_vote`; **`0005_image_vote_turnstile.sql`** adds `image_votes.turnstile_hash`; **`0006_corrections_and_signals.sql`** adds photo-optional pin corrections, community signals, and the engagement-tiered trust model (§11); **`0007_correction_anchor_and_retire_fix.sql`** hardens it — an immutable `origin_geom` anchor for the 2 km move cap, strict deny-dominance for retirement, and per-attribute value bounds (§11.5). Target: **PostgreSQL 17 + PostGIS 3.5** — the official non-alpine `postgis/postgis:17` image currently ships PostGIS **3.5**; PostGIS 3.6 is current upstream but its non-alpine PG17 image is not yet published, and OpenDrop's schema uses **no 3.6-only feature** (all spatial functions used exist since PostGIS ≤3.0). See [FINDINGS.md](../research/FINDINGS.md) Finding 5 / decision D3.
 
-> **Migration mechanism:** `0001_init.sql` contains plain (non-idempotent) `CREATE` statements — `CREATE TYPE … AS ENUM` has no `IF NOT EXISTS` form, so the file is **applied exactly once**, tracked by a ledger. `scripts/migrate.sh` first ensures `CREATE TABLE IF NOT EXISTS schema_migrations(version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`, then applies each `NNNN_*.sql` whose `version` is absent and records it — so re-running is a no-op without requiring self-idempotent DDL. On first container boot the Postgres `initdb` mount applies `0001_init.sql` directly; `migrate.sh` is for existing databases.
+> **Migration mechanism:** each `NNNN_*.sql` contains plain (non-idempotent) `CREATE` statements — `CREATE TYPE … AS ENUM` has no `IF NOT EXISTS` form, so each file is **applied exactly once**, tracked by a ledger. `scripts/migrate.sh` first ensures `CREATE TABLE IF NOT EXISTS schema_migrations(version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`, then applies each `NNNN_*.sql` whose `version` is absent (in filename order) and records it — so re-running is a no-op without requiring self-idempotent DDL. On first container boot the Postgres `initdb` mount applies `0001_init.sql` directly; `migrate.sh` applies the full chain (including `0002`–`0007`) to existing databases.
 
 ## Design principles (traceable to Phase 1)
 
@@ -24,6 +24,7 @@ CREATE EXTENSION IF NOT EXISTS citext;       -- case-insensitive source refs
 CREATE TYPE org_type AS ENUM (
   'charity_store',     -- shop=charity (Goodwill/SA storefronts)
   'thrift_store',      -- shop=second_hand
+  'consignment',       -- resale shop paying the consignor (added by 0003, after thrift_store)
   'drop_bin',          -- unattended clothing/textile bin
   'donation_center',   -- staffed drop-off (GreenDrop-style)
   'mutual_aid',        -- community closet / free store
@@ -46,6 +47,13 @@ CREATE TYPE storage_policy AS ENUM ('ingest', 'enrich_only');
 CREATE TYPE pending_status AS ENUM ('awaiting', 'promoted', 'rejected', 'duplicate');
 
 CREATE TYPE scrape_status AS ENUM ('success', 'partial', 'failed');
+
+-- Moderation lifecycle of a community-submitted photo (added by 0004; see §10).
+CREATE TYPE image_status AS ENUM (
+  'pending',           -- newly uploaded; shown only with ?include_low=true
+  'visible',           -- approved / vote-promoted; shown in the public gallery
+  'hidden'             -- suppressed (spam/abuse); hidden from the default gallery
+);
 ```
 
 ---
@@ -286,7 +294,10 @@ DECLARE
 BEGIN
   -- Source component: sum authority of distinct INGEST sources (enrich_only excluded entirely).
   -- v_redist = "has >= 1 ingest source" (the join already filters to ingest, so COUNT(*)>0 says it).
-  SELECT COALESCE(LEAST(85, SUM(s.authority_weight)), 0),
+  -- NOTE (0002 fix): COALESCE wraps SUM *inside* LEAST. Postgres LEAST/GREATEST skip NULL inputs,
+  --   so the original LEAST(85, SUM(...)) returned 85 for a source-less row (SUM = NULL) — every
+  --   such row showed source_component 85. COALESCE(SUM(...),0) forces the no-source case to 0.
+  SELECT LEAST(85, COALESCE(SUM(s.authority_weight), 0)),
          COUNT(*) > 0
     INTO v_source, v_redist
   FROM (SELECT DISTINCT ls.source_code FROM location_sources ls WHERE ls.location_id = p_location_id) d
@@ -405,3 +416,136 @@ CREATE VIEW v_public_locations AS
 ```
 
 This view is the only thing the bulk-export / open-data endpoint reads — guaranteeing no `enrich_only`-tainted row ever leaves the system (D1/D2).
+
+---
+
+## 10. Community photos — `location_images` & `image_votes` (added by 0004 / 0005)
+
+Crowd-submitted photos for a location, with optional **pin corrections**. A photo may carry a suggested coordinate; once a correction accumulates enough helpful votes the canonical `locations.geom` is moved to the suggested point automatically. Same privacy/abuse model as votes: raw IPs are never stored (only salted SHA-256 hashes), and uploads/votes are Turnstile-gated and per-IP capped. Image bytes live on disk under `MEDIA_DIR` (`backend/app/config.py`); only the relative `path` is stored.
+
+```sql
+-- One row per uploaded photo (migration 0004).
+CREATE TABLE location_images (
+  id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  location_id     bigint NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+  path            text   NOT NULL,                   -- relative path under MEDIA_DIR; bytes EXIF-stripped on upload
+  mime            text   NOT NULL,
+  submitter_ip_hash text NOT NULL,                   -- sha256(IP_HASH_SALT || client_ip); raw IP never stored
+  turnstile_hash  text,                              -- sha256 of the (single-use) Turnstile token, for audit
+  suggested_lat   double precision,                  -- optional pin correction (NULL = no correction proposed)
+  suggested_lon   double precision,
+  upvotes         integer     NOT NULL DEFAULT 0,    -- denormalized helpful count (kept in sync by trigger)
+  downvotes       integer     NOT NULL DEFAULT 0,    -- denormalized unhelpful count
+  score           integer     NOT NULL DEFAULT 0,    -- upvotes - downvotes
+  status          image_status NOT NULL DEFAULT 'pending',
+  applied         boolean     NOT NULL DEFAULT false,-- true once this photo's pin correction has moved locations.geom
+  created_at      timestamptz NOT NULL DEFAULT now()
+);
+
+-- One helpful/unhelpful vote per (image, ip-hash). Turnstile added by 0005.
+CREATE TABLE image_votes (
+  id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  image_id        bigint  NOT NULL REFERENCES location_images(id) ON DELETE CASCADE,
+  ip_hash         text    NOT NULL,                  -- sha256(IP_HASH_SALT || client_ip)
+  helpful         boolean NOT NULL,                  -- true = upvote (helpful), false = downvote
+  turnstile_hash  text,                              -- sha256 of the Turnstile token (added by 0005)
+  created_at      timestamptz NOT NULL DEFAULT now(),
+
+  CONSTRAINT uq_image_vote UNIQUE (image_id, ip_hash)  -- one vote per image per ip-hash
+);
+```
+
+**`recompute_image()` + `trg_after_image_vote` (migration 0004).** On every `image_votes` write the trigger recomputes the photo's denormalized `upvotes`/`downvotes`/`score`, and once a correction photo reaches **`score >= 3`** it auto-applies the pin correction: the canonical `locations.geom` is moved to the photo's `suggested_lat`/`suggested_lon` and the photo is marked `applied = true` (idempotent — applied once). An advisory lock serializes concurrent votes on the same image. This mirrors the location-vote recompute pattern in §7.
+
+**Turnstile on image votes (0005).** `image_votes.turnstile_hash` records the (single-use) Turnstile token hash for vote auditing, mirroring `votes.turnstile_hash` (§4) and `location_images.turnstile_hash` (uploads). The vote endpoint is Turnstile-gated, and the frontend gallery renders a Turnstile widget alongside the helpful/unhelpful controls.
+
+> **API surface** (see [ARCHITECTURE](ARCHITECTURE.md)): `GET /api/locations/{id}/images` (gallery; `?include_low=true` also returns `pending`/`hidden`), `POST /api/locations/{id}/images` (upload + optional pin correction; Turnstile + EXIF-strip + per-IP daily cap), `POST /api/images/{id}/vote` (helpful/unhelpful; Turnstile-gated; advisory-locked; auto-applies the pin correction at `score >= 3`).
+
+> **Redistribution note:** these tables are community media keyed to a canonical `location`; they are *not* part of `v_public_locations` (§9) and never ride out via the open-data export.
+
+---
+
+## 11. Pin corrections & community signals — engagement-tiered trust (0006 / 0007)
+
+Uploading a photo (§10) is a heavy way to fix a pin that is merely 150 ft off. Migration **0006** adds a lightweight, photo-**optional** *correction*: drag the pin to where the bin actually is. It also adds *community signals* (perceived safety, bin condition, # of bins) — soft context that does **not** move pins or change confidence, but does feed the engagement measure below. Migration **0007** hardens the model after an adversarial review (§11.5).
+
+### 11.1 Tables (0006)
+
+```sql
+CREATE TYPE correction_status AS ENUM ('open', 'applied', 'rejected', 'superseded');
+
+-- Pin-move proposals (photo optional).
+CREATE TABLE location_corrections (
+  id, location_id -> locations(id) ON DELETE CASCADE,
+  suggested_lat/lon double precision NOT NULL,        -- CHECK lat ∈[-90,90], lon ∈[-180,180]
+  note text, image_id -> location_images(id),         -- optional supporting photo
+  submitter_ip_hash text NOT NULL, turnstile_hash text,
+  gps_corroborated boolean NOT NULL DEFAULT false,    -- submitter within ~75 m (client-computed; coords NEVER stored)
+  confirmations/rejections/support/required_support integer,  -- denormalized, kept in sync by recompute_correction()
+  status correction_status NOT NULL DEFAULT 'open', applied boolean, created_at, applied_at
+);
+
+-- One confirm/reject vote per (correction, ip_hash).
+CREATE TABLE correction_votes (
+  correction_id -> location_corrections(id) ON DELETE CASCADE,
+  ip_hash text NOT NULL, confirm boolean NOT NULL, gps_corroborated boolean NOT NULL DEFAULT false,
+  turnstile_hash text, created_at,
+  CONSTRAINT uq_correction_vote UNIQUE (correction_id, ip_hash)
+);
+
+-- Community attribute ratings. One row per (location, ip, attribute); re-rating UPDATEs in place.
+CREATE TABLE attribute_votes (
+  location_id -> locations(id) ON DELETE CASCADE,
+  ip_hash text NOT NULL, attribute text NOT NULL, value smallint NOT NULL,
+  turnstile_hash text, created_at, updated_at,
+  CONSTRAINT attribute_name  CHECK (attribute IN ('safety','condition','bins')),
+  CONSTRAINT uq_attribute_vote UNIQUE (location_id, ip_hash, attribute)
+);
+```
+
+### 11.2 The trust model — trust scales **inversely** with how invested the community already is
+
+- **Engagement `E`** = `location_engagement(id)` = count of **DISTINCT** participants (by `ip_hash`) across *every* interaction with a location — votes, photo uploads, photo votes, corrections, correction votes, attribute ratings. An attacker can *raise* `E` by brigading, but that only makes the location **harder** to vandalize (every interaction type raises the bar), and `E` can never be *lowered* by an attacker.
+- **Tiers:** `Cold E<3` · `Warm 3..14` · `Hot E>=15`.
+- **Move-pin support** (`correction_required_support(E)`): Cold **1** (good faith) · Warm **2** (or **1 + GPS**) · Hot **4** (a GPS confirmer counts double). The submitter contributes weight `1` (`2` if GPS-corroborated); each confirmer adds `1` (`2` if GPS). A Cold good-faith fix therefore auto-applies on insert.
+- **Mark-gone / retire deny floor** (`retire_deny_floor(E)`): Cold **2** · Warm **4** · Hot **8**. The §7 deny-dominance override is generalized to these tiers — a handful of stray "it's gone" reports must not retire a heavily-used Salvation Army.
+
+### 11.3 GPS corroboration — boolean only, **never coordinates** (privacy contract)
+
+"📍 I'm standing here" only **adds weight**; it never solely gates a fix. The client computes whether the device is within `GPS_CORROBORATION_RADIUS_M` (**75 m**, `config.py`) of the suggested point **on-device** and sends a single **boolean** `gps_corroborated`. Coordinates are **never sent, stored, correlated, or sold** — the UI states exactly that, and the location-detail payload deliberately omits `gps_corroborated` so a reader can't correlate it. GPS is never applied to Cold good-faith fixes (they already auto-apply at support 1).
+
+### 11.4 Consensus + auto-apply (`recompute_correction`, trigger-driven)
+
+`recompute_correction(id)` runs on every correction insert and every correction-vote write. It recomputes `confirmations`/`rejections`/`support`/`required_support`, then: **rejects** when out-voted (`rejections >= 2 AND rejections > weighted-confirms`); otherwise **auto-applies** once `support >= required_support` **and** the move is within the accuracy cap — moving `locations.geom`, marking the proposal `applied`, and `superseding` any other open proposals for that location. It is idempotent (a resolved proposal short-circuits).
+
+### 11.5 0007 hardening (adversarial-review remediation)
+
+1. **Origin anchor for the move cap.** A correction is an *accuracy fix*, not a relocation. 0006 measured the 2 km cap (`CORRECTION_MAX_MOVE_M`) from the **current** `geom`, so a chain of sub-2 km hops could *walk* a pin across town. 0007 adds an **immutable** `locations.origin_geom` (back-filled to `geom`; set once by a `BEFORE INSERT` trigger `locations_set_origin`), and both the API guard (`routers/corrections.py`) and `recompute_correction()` now measure the cap from `COALESCE(origin_geom, geom)`. A pin can never drift more than 2 km from where it was first seeded.
+2. **Strict deny-dominance for retirement.** The tiered override became `v_dn >= floor AND v_dn > v_up` (was `>= v_up`) — an exact confirm/deny **tie no longer retires** a location; denies must *strictly* outweigh confirmations.
+3. **Per-attribute value bounds.** 0006's single `value BETWEEN 1 AND 50` let a `safety`/`condition` rating be any value up to 50 (the scales are 1..3). 0007 replaces it with a per-attribute `CHECK`: `safety`/`condition` ∈ **1..3**, `bins` ∈ **1..50**. A per-IP daily cap (`attributes_per_ip_per_day`, default 60, counted only for *new* `(location, attribute)` pairs) plus an `attribute_votes (ip_hash, updated_at)` index back the API rate-limit.
+
+> **Accepted tradeoff (deliberate).** A lone **Warm** submitter who self-asserts GPS (`1 + GPS = 2`) can still auto-apply a fix alone — `recompute_correction`'s `v_support := (1 + v_sub_gps::int) + v_conf_w` is intentionally left as-is. The exposure is bounded by the **2 km origin-anchored cap**, **Turnstile**, and the per-IP daily correction cap, and the alternative (requiring a second human for every Warm fix) would gut the lightweight-correction UX that motivated 0006. Documented here so it's a known, owned decision rather than an oversight.
+
+> **API surface** (see [ARCHITECTURE](ARCHITECTURE.md)): `POST /api/locations/{id}/corrections` (propose; Turnstile + per-IP daily cap + ≤2 km-from-origin guard), `POST /api/corrections/{id}/vote` (confirm/deny; Turnstile; self-vote rejected `409`), `POST /api/locations/{id}/attributes` (rate safety/condition/bins; Turnstile; per-IP daily cap on new pairs). `GET /api/reverse?lat=&lon=` reverse-geocodes a dropped pin for the drop-a-pin submit flow.
+
+> **Redistribution note:** like §10, all three tables are community signals keyed to a canonical `location`; none are part of `v_public_locations` (§9) and none ride out via the open-data export.
+
+---
+
+## 12. `seed_progress` — national-seed checkpoint (added by 0008)
+
+The national seeder (`pipeline/seed_national.py`, [ARCHITECTURE §7.7](ARCHITECTURE.md)) runs for hours and must survive interruption, so it persists its progress here — one row per state region (plus the synthetic `__finalize__` row that guards the global dedup/promote step).
+
+```sql
+CREATE TABLE seed_progress (
+    region_name TEXT PRIMARY KEY,                  -- state code ('ca'), or '__finalize__'
+    status      TEXT NOT NULL DEFAULT 'pending',   -- pending | running | done | failed
+    detail      JSONB NOT NULL DEFAULT '{}',       -- per-scraper upsert/error counts for the state
+    started_at  TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX seed_progress_status_ix ON seed_progress (status);
+```
+
+**Resumability contract.** A state is set `running` before its scraper sweep and `done` only after the whole set finishes — so an interrupted run leaves the in-flight state `running`, and the next run re-runs exactly that state while skipping `done` ones. `SEED_FORCE=1` ignores the checkpoint and re-sweeps all. The table is **operational state, not civic data**: it's never read by the API, never in `v_public_locations` (§9), and never exported.

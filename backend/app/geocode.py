@@ -39,6 +39,33 @@ async def search(q: str, limit: int = 5) -> list[dict]:
     return out
 
 
+async def reverse(lat: float, lon: float) -> dict | None:
+    """Reverse-geocode (lat, lon) → {line, city, state, postal_code, display_name} or None.
+    Powers drop-a-pin address back-fill. Never raises."""
+    url = settings.nominatim_url.replace("/search", "/reverse")
+    params = {"format": "jsonv2", "lat": str(lat), "lon": str(lon), "addressdetails": "1", "zoom": "18"}
+    try:
+        async with httpx.AsyncClient(timeout=10, headers={"User-Agent": UA}) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(data, dict):
+        return None
+    addr = data.get("address")
+    if not isinstance(addr, dict):
+        return None
+    road = addr.get("road") or addr.get("pedestrian") or addr.get("footway") or addr.get("path")
+    line = " ".join(p for p in (addr.get("house_number"), road) if p) or None
+    city = (addr.get("city") or addr.get("town") or addr.get("village")
+            or addr.get("hamlet") or addr.get("suburb") or addr.get("county"))
+    iso = addr.get("ISO3166-2-lvl4") or ""  # e.g. "US-OH" for US states
+    state = iso.split("-")[-1].upper() if "-" in iso and len(iso.split("-")[-1]) == 2 else None
+    return {"line": line, "city": city, "state": state,
+            "postal_code": addr.get("postcode"), "display_name": data.get("display_name")}
+
+
 async def geocode(line=None, city=None, state=None, postal_code=None) -> tuple[float, float] | None:
     """Structured Nominatim geocode → (lat, lon) or None. Never raises."""
     params = {"format": "jsonv2", "limit": "1", "countrycodes": "us"}

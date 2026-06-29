@@ -3,10 +3,16 @@ from fastapi import APIRouter, HTTPException, Request
 from pipeline.common import brand_key, name_sim, normalize_house_number
 
 from .. import db
+from ..community import (
+    attribute_aggregates,
+    engagement_tier,
+    required_support,
+    retire_deny_floor,
+)
 from ..config import bucket, settings
 from ..deps import client_ip
-from ..geocode import geocode
-from ..models import SubmitIn
+from ..geocode import geocode, reverse
+from ..models import AddressIn, SubmitIn
 from ..moderation import screen_submission
 from ..security import ip_hash, token_hash, verify_turnstile
 
@@ -96,6 +102,11 @@ async def get_location(loc_id: int):
         if r["status"] == "merged":
             raise HTTPException(404, {"code": "merged", "message": "location merged into another",
                                       "details": {"canonical_id": r["merged_into_id"]}})
+        if r["status"] == "hidden":
+            # Operator takedown (status='hidden' is a sticky manual override that survives
+            # recompute_confidence). Public detail must 404 — the map already filters it out by
+            # status='active', this closes the direct-by-id read path too.
+            raise HTTPException(404, {"code": "not_found", "message": "location not found"})
         cur = await conn.execute(
             """SELECT s.code, s.display_name, s.attribution
                FROM location_sources ls JOIN sources s ON s.code = ls.source_code
@@ -103,6 +114,52 @@ async def get_location(loc_id: int):
             (loc_id,),
         )
         sources = [dict(s) for s in await cur.fetchall()]
+
+        # Community signals: engagement tier, attribute aggregates, and any open pin corrections.
+        cur = await conn.execute("SELECT location_engagement(%s) AS e", (loc_id,))
+        engagement = (await cur.fetchone())["e"]
+        attributes = await attribute_aggregates(conn, loc_id)
+        # NOTE: gps_corroborated is deliberately NOT exposed per-correction. It still weights
+        # consensus server-side, but publishing "this proposer was physically on site" per row
+        # would correlate presence — the GPS privacy contract says only a boolean is ever sent to
+        # us, and we don't re-publish even that. The support meter conveys all the UI needs.
+        cur = await conn.execute(
+            """SELECT id, suggested_lat, suggested_lon, note, image_id,
+                      support, required_support, confirmations, rejections, created_at
+               FROM location_corrections
+               WHERE location_id = %s AND status = 'open'
+               ORDER BY created_at DESC""",
+            (loc_id,),
+        )
+        open_corrections = [
+            {"id": c["id"], "suggested_lat": c["suggested_lat"], "suggested_lon": c["suggested_lon"],
+             "note": c["note"], "image_id": c["image_id"],
+             "support": c["support"], "required_support": c["required_support"],
+             "confirmations": c["confirmations"], "rejections": c["rejections"],
+             "created_at": c["created_at"]}
+            for c in await cur.fetchall()
+        ]
+        # Open crowd field corrections (name / type / org / address) — migration 0009. The proposed
+        # value is exposed so the popover can show "rename to X" and let others vote it through.
+        cur = await conn.execute(
+            """SELECT id, field, proposed_value, proposed_line, proposed_city, proposed_state,
+                      proposed_postal, note, support, required_support, confirmations, rejections,
+                      created_at
+               FROM field_corrections
+               WHERE location_id = %s AND status = 'open'
+               ORDER BY created_at DESC""",
+            (loc_id,),
+        )
+        open_field_corrections = [
+            {"id": c["id"], "field": c["field"], "proposed_value": c["proposed_value"],
+             "proposed_address": ({"line": c["proposed_line"], "city": c["proposed_city"],
+                                   "state": c["proposed_state"], "postal_code": c["proposed_postal"]}
+                                  if c["field"] == "address" else None),
+             "note": c["note"], "support": c["support"], "required_support": c["required_support"],
+             "confirmations": c["confirmations"], "rejections": c["rejections"],
+             "created_at": c["created_at"]}
+            for c in await cur.fetchall()
+        ]
 
     conf = float(r["confidence"])
     return {
@@ -115,6 +172,14 @@ async def get_location(loc_id: int):
         "confidence": conf, "bucket": bucket(conf), "status": r["status"],
         "upvotes": r["upvotes"], "denies": r["denies"], "last_verified_at": r["last_verified_at"],
         "sources": sources,
+        # Engagement-tiered trust model (see migration 0006 / community.py).
+        "engagement": engagement,
+        "tier": engagement_tier(engagement),
+        "required_support": required_support(engagement),
+        "retire_deny_floor": retire_deny_floor(engagement),
+        "attributes": attributes,
+        "open_corrections": open_corrections,
+        "open_field_corrections": open_field_corrections,
     }
 
 
@@ -131,9 +196,13 @@ async def submit_location(body: SubmitIn, request: Request):
 
     iph = ip_hash(ip)
     thash = token_hash(body.turnstile_token)
-    state = (a.state or "").upper() or None
     bkey = brand_key(body.name)
+    dropped_pin = body.lat is not None and body.lon is not None
 
+    # Step 1 — per-IP rate limit. The connection is held only for this fast count and then released
+    # BEFORE the external geocode below: an httpx round-trip must never occupy a pool connection, or
+    # a burst of submits can exhaust the pool and stall every other request (the held-connection
+    # blocker). Checking the limit first also means a throttled IP never triggers a Nominatim call.
     async with db.pool.connection() as conn:
         cur = await conn.execute(
             "SELECT count(*) AS n FROM pending_locations "
@@ -143,12 +212,31 @@ async def submit_location(body: SubmitIn, request: Request):
         if (await cur.fetchone())["n"] >= settings.submit_per_ip_per_day:
             raise HTTPException(429, {"code": "submit_cooldown", "message": "daily submission limit reached"})
 
+    # Step 2 — geocode / reverse-geocode OUTSIDE any held DB connection (external HTTP, no pool slot).
+    if dropped_pin:
+        # Drop-a-pin: the pin is authoritative; back-fill a missing address via reverse geocode.
+        coords = (body.lat, body.lon)
+        if not (a.line or a.city or a.postal_code):
+            rev = await reverse(body.lat, body.lon)
+            if rev:
+                a = AddressIn(line=a.line or rev["line"], city=a.city or rev["city"],
+                              state=a.state or rev["state"], postal_code=a.postal_code or rev["postal_code"])
+    else:
         coords = await geocode(a.line, a.city, a.state, a.postal_code)
-        dupe_id = None
+    state = (a.state or "").upper() or None
+
+    # Step 3 — reacquire a connection for the dupe scan + write transaction (fast, DB-only work).
+    async with db.pool.connection() as conn:
+        # Classify a nearby match by visibility. An ACTIVE duplicate is a real, on-map collision
+        # and we reject the re-add. A PENDING duplicate is a location that exists but is gated off
+        # the map by low confidence — the user genuinely cannot see it, so re-adding it should
+        # RESURFACE it (an implicit confirm vote), not dead-end as a duplicate of an invisible pin.
+        active_dupe_id = None
+        pending_dupe_id = None
         if coords:
             lat, lon = coords
             cur = await conn.execute(
-                f"""SELECT id, name, brand_key FROM locations
+                f"""SELECT id, name, brand_key, status FROM locations
                     WHERE status IN ('active', 'pending')
                       AND ST_DWithin(geom::geography, {_POINT}::geography, 300)""",
                 (lon, lat),
@@ -156,10 +244,15 @@ async def submit_location(body: SubmitIn, request: Request):
             for cand in await cur.fetchall():
                 same_brand = bkey is not None and cand["brand_key"] == bkey
                 if same_brand or name_sim(body.name, cand["name"]) >= 0.4:
-                    dupe_id = cand["id"]
-                    break
+                    if cand["status"] == "active":
+                        active_dupe_id = cand["id"]
+                        break  # a visible duplicate is the strongest signal — stop and reject
+                    if pending_dupe_id is None:
+                        pending_dupe_id = cand["id"]  # remember, but keep scanning for an active one
+        dupe_id = active_dupe_id or pending_dupe_id  # recorded on the pending_locations audit row
 
         location_id = None
+        now_active = False
         async with conn.transaction():
             if coords:
                 lat, lon = coords
@@ -181,8 +274,29 @@ async def submit_location(body: SubmitIn, request: Request):
                 )
             pending_id = (await cur.fetchone())["id"]
 
-            if dupe_id:
+            if active_dupe_id:
                 status = "duplicate"
+            elif pending_dupe_id:
+                # Re-adding a gated (invisible) location: treat it as a confirm vote that resurfaces
+                # the existing pin instead of rejecting it. One confirm takes a fresh crowd pin from
+                # confidence 20 → 25 → 'active' (trg_after_vote → recompute_confidence). Respect the
+                # 24h per-IP vote cooldown so a repeat re-add can't stack boosts; serialize with the
+                # same advisory lock the vote endpoint uses.
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext(%s))", (f"{pending_dupe_id}:{iph}",))
+                cur = await conn.execute(
+                    "SELECT 1 FROM votes WHERE location_id = %s AND ip_hash = %s "
+                    "AND created_at > now() - interval '24 hours' LIMIT 1",
+                    (pending_dupe_id, iph),
+                )
+                if await cur.fetchone() is None:
+                    await conn.execute(
+                        "INSERT INTO votes (location_id, vote, ip_hash, turnstile_hash) "
+                        "VALUES (%s, 'confirm', %s, %s)",
+                        (pending_dupe_id, iph, thash),
+                    )
+                location_id = pending_dupe_id
+                status = "resurfaced"
             elif coords:
                 lat, lon = coords
                 cur = await conn.execute(
@@ -208,5 +322,12 @@ async def submit_location(body: SubmitIn, request: Request):
             else:
                 status = "awaiting"
 
+        # Did the resurface boost clear the confidence gate? (Read after commit, so the vote
+        # trigger has recomputed.) A disputed pin with denies may stay gated — that's intended.
+        if status == "resurfaced" and location_id is not None:
+            cur = await conn.execute("SELECT status FROM locations WHERE id = %s", (location_id,))
+            row = await cur.fetchone()
+            now_active = bool(row and row["status"] == "active")
+
     return {"pending_id": pending_id, "status": status, "geocoded": bool(coords),
-            "location_id": location_id, "duplicate_of": dupe_id}
+            "location_id": location_id, "duplicate_of": dupe_id, "now_active": now_active}

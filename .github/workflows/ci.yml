@@ -21,6 +21,7 @@ jobs:
           --health-cmd "pg_isready -U opendrop -d opendrop"
           --health-interval 5s --health-timeout 5s --health-retries 20
     env:
+      # Owner role: used by migrate.sh (DDL) and as the default test connection.
       DATABASE_URL: postgresql://opendrop:opendrop@localhost:5432/opendrop
     steps:
       - uses: actions/checkout@v4
@@ -28,14 +29,39 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+        run: |
+          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+          sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Lint (ruff)
         run: ruff check backend/app pipeline
-      - name: Apply schema
+
+      # Apply the schema through the REAL migration runner (not a raw loop), so CI exercises the
+      # exact path prod uses. Run it TWICE: the second pass must be a clean no-op, proving the
+      # schema_migrations ledger + self-recording inserts are idempotent (the deploy guarantee).
+      - name: Migrate (first pass — applies)
+        run: bash scripts/migrate.sh
+      - name: Migrate (second pass — must be a no-op)
         run: |
-          sudo apt-get update && sudo apt-get install -y postgresql-client
-          for f in migrations/*.sql; do
-            echo "applying $f"; psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
-          done
-      - name: Run tests
-        run: pytest
+          out="$(bash scripts/migrate.sh)"
+          echo "$out"
+          if echo "$out" | grep -q '^apply '; then
+            echo "::error::migrate.sh re-applied a migration on the second pass (not idempotent)"; exit 1
+          fi
+
+      - name: Run tests (owner role)
+        run: pytest -q
+
+      # Run the API-surface tests again as the least-privilege application role the API uses in
+      # production (deploy/app_role.sql). This catches any "permission denied" that only shows up
+      # when the API is NOT the schema owner — the documented prod configuration. owner_only tests
+      # (pipeline/seeder/reconcile + a couple of owner-level DELETE self-cleans) are excluded: that
+      # work runs as the owner role in prod and is already covered by the owner pass above.
+      - name: Create restricted app role
+        run: |
+          APP_PW="ci_app_pw_$(date +%s)"
+          echo "APP_PW=$APP_PW" >> "$GITHUB_ENV"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v app_pw="$APP_PW" -f deploy/app_role.sql
+      - name: Run tests (restricted app role)
+        env:
+          DATABASE_URL: postgresql://opendrop_app:${{ env.APP_PW }}@localhost:5432/opendrop
+        run: pytest -q -m "not owner_only"

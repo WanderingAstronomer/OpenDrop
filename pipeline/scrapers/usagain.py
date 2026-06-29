@@ -7,10 +7,10 @@ from __future__ import annotations
 import logging
 import re
 
-import httpx
 from selectolax.parser import HTMLParser
 
 from .base import BaseScraper, NormalizedRecord, load
+from .http import PoliteClient
 
 log = logging.getLogger("opendrop.usagain")
 
@@ -53,7 +53,7 @@ class UsAgainScraper(BaseScraper):
 
     def fetch(self, region):
         seen: set[tuple] = set()
-        with httpx.Client(timeout=25, headers={"User-Agent": "Mozilla/5.0 (OpenDrop civic open-data)"}) as client:
+        with PoliteClient(timeout=25, headers={"User-Agent": "Mozilla/5.0 (OpenDrop civic open-data)"}) as client:
             for zip_code in (region.zips or []):
                 try:
                     html = client.get(URL, params={"zip": zip_code}).text

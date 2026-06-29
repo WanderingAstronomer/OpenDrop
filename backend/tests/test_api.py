@@ -2,8 +2,13 @@
 vote raises confidence, denies -> pending (single & multi-source override),
 24h cooldown 429, missing-token 403 (dev mock), export excludes non-redistributable."""
 import uuid
+from types import SimpleNamespace
+
+import pytest
 
 from conftest import requires_db
+
+from pipeline.scrapers.base import _reconcile  # closure-detection circuit breaker
 
 TOK = "dev-mock-token"  # any non-empty token passes the CF test secret
 
@@ -46,6 +51,25 @@ def test_meta_shape(client):
     assert r.status_code == 200
     body = r.json()
     assert "sources" in body and "turnstile_sitekey" in body and "confidence_buckets" in body
+    assert "coverage" in body  # initial-view hint (may be null until data is seeded)
+
+
+@requires_db
+def test_meta_coverage_brackets_active_data(client, conn):
+    """coverage drives the map's opening view, so its bbox must actually contain the live data."""
+    lat, lon = 39.961, -82.991
+    conn.execute(
+        "INSERT INTO locations (geom, name, org_type, status) "
+        "VALUES (ST_SetSRID(ST_MakePoint(%s,%s),4326), %s, 'drop_bin', 'active')",
+        (lon, lat, f"cov-{uuid.uuid4()}"),
+    )
+    conn.commit()
+    cov = client.get("/api/meta").json()["coverage"]
+    assert cov is not None, "coverage must be present once an active location exists"
+    s, w, n, e = cov["bbox"]
+    assert s <= lat <= n and w <= lon <= e
+    cy, cx = cov["center"]
+    assert s <= cy <= n and w <= cx <= e
 
 
 @requires_db
@@ -137,7 +161,8 @@ def test_image_votes_promote_and_apply_pin_correction(conn, client):
     assert client.get(f"/api/locations/{loc}/images").json()["images"] == []
     assert len(client.get(f"/api/locations/{loc}/images?include_low=true").json()["images"]) == 1
     for i in range(3):
-        r = client.post(f"/api/images/{img}/vote", json={"vote": "helpful"}, headers={"X-Real-IP": f"10.20.0.{i}"})
+        r = client.post(f"/api/images/{img}/vote", json={"vote": "helpful", "turnstile_token": TOK},
+                        headers={"X-Real-IP": f"10.20.0.{i}"})
         assert r.status_code == 200
     row = conn.execute("SELECT score, status, applied FROM location_images WHERE id=%s", (img,)).fetchone()
     assert row["score"] == 3 and row["status"] == "visible" and row["applied"] is True
@@ -148,6 +173,25 @@ def test_image_votes_promote_and_apply_pin_correction(conn, client):
 
 
 @requires_db
+def test_image_vote_missing_token_403(conn, client):
+    """The image-vote endpoint auto-applies pin corrections, so it is bot-gated like the
+    location vote: a vote with no Turnstile token is rejected before any row is written."""
+    loc = _mk_location(conn, "img vote no token", lat=40.00, lon=-83.00)
+    img = conn.execute(
+        "INSERT INTO location_images (location_id, path, mime, submitter_ip_hash) "
+        "VALUES (%s,'y.jpg','image/jpeg','h') RETURNING id", (loc,)
+    ).fetchone()["id"]
+    conn.commit()
+    r = client.post(f"/api/images/{img}/vote", json={"vote": "helpful"})  # no token
+    assert r.status_code == 403
+    assert r.json()["error"]["code"] == "turnstile_failed"
+    # nothing was recorded
+    n = conn.execute("SELECT count(*) AS n FROM image_votes WHERE image_id=%s", (img,)).fetchone()["n"]
+    assert n == 0
+
+
+@requires_db
+@pytest.mark.owner_only  # closure detection is pipeline work (deletes source rows) — owner role
 def test_source_removal_retires_location(conn):
     """Closure detection: a location that loses its last ingest source must drop to
     confidence 0 / pending — guards the LEAST(85, NULL)=85 source-component bug."""
@@ -157,3 +201,83 @@ def test_source_removal_retires_location(conn):
     conn.commit()
     assert _confidence(conn, loc) == 0.0
     assert _status(conn, loc) == "pending"
+
+
+# --- reconciliation circuit breaker (pipeline/scrapers/base._reconcile) -----------------
+# These exercise the loader's closure-detection guard directly. Each uses its OWN far-away bbox
+# (Pacific NW / high desert — nowhere near the 39.96,-82.99 rows other tests create) and wipes
+# that bbox first, so `current` counts only what the test inserts regardless of run order.
+
+def _seed_links(conn, code, bbox, refs):
+    """Insert one location + one known-source_ref link per ref, all inside `bbox` (s,w,n,e).
+    Clears the bbox for `code` first so the in-region link count is deterministic."""
+    s, w, n, e = bbox
+    conn.execute(
+        "DELETE FROM location_sources WHERE source_code=%s "
+        "AND source_geom && ST_MakeEnvelope(%s,%s,%s,%s,4326)", (code, w, s, e, n))
+    conn.commit()
+    lat0, lon0 = (s + n) / 2, (w + e) / 2
+    for i, ref in enumerate(refs):
+        lat, lon = lat0 + i * 0.001, lon0  # tight cluster, all well inside the bbox
+        loc = conn.execute(
+            "INSERT INTO locations (geom, name, org_type) "
+            "VALUES (ST_SetSRID(ST_MakePoint(%s,%s),4326), %s, 'charity_store') RETURNING id",
+            (lon, lat, f"recon {ref}"),
+        ).fetchone()["id"]
+        conn.execute(
+            "INSERT INTO location_sources (location_id, source_code, source_ref, source_geom) "
+            "VALUES (%s, %s, %s, ST_SetSRID(ST_MakePoint(%s,%s),4326))",
+            (loc, code, ref, lon, lat),
+        )
+    conn.commit()
+
+
+def _live_refs(conn, code, bbox):
+    s, w, n, e = bbox
+    rows = conn.execute(
+        "SELECT source_ref::text AS ref FROM location_sources WHERE source_code=%s "
+        "AND source_geom && ST_MakeEnvelope(%s,%s,%s,%s,4326)", (code, w, s, e, n)).fetchall()
+    return {r["ref"] for r in rows}
+
+
+@requires_db
+@pytest.mark.owner_only  # _reconcile is pipeline closure detection (deletes source rows) — owner role
+def test_reconcile_breaker_blocks_mass_truncation(conn):
+    """Fraction trip: a run that saw only half of a source's in-region links would retire the
+    other 50% (> the 40% ceiling). The breaker must skip and delete nothing — a truncated/blocked
+    upstream response must never mass-retire a region."""
+    bbox = (45.0, -121.0, 46.0, -120.0)  # OR/WA — isolated
+    refs = [f"trunc/{i}" for i in range(10)]
+    _seed_links(conn, "salvation_army", bbox, refs)
+    seen = set(refs[:5])  # upstream only returned 5 of 10 -> would retire 5 (50%) > 40%, but seen=5 >= floor
+    removed = _reconcile(conn, "salvation_army", "ingest", SimpleNamespace(bbox=bbox), seen)
+    assert removed == 0
+    assert _live_refs(conn, "salvation_army", bbox) == set(refs)  # all 10 survive
+
+
+@requires_db
+@pytest.mark.owner_only  # _reconcile is pipeline closure detection (deletes source rows) — owner role
+def test_reconcile_breaker_blocks_tiny_run(conn):
+    """Floor trip: even a fraction-safe deletion is refused when the run saw fewer than
+    RECONCILE_MIN_SEEN (5) records — too little signal to trust a closure call."""
+    bbox = (47.0, -123.0, 48.0, -122.0)
+    refs = [f"tiny/{i}" for i in range(3)]
+    _seed_links(conn, "salvation_army", bbox, refs)
+    seen = set(refs[:2])  # would retire 1 of 3 (33% < 40% — fraction OK) but seen=2 < 5 -> floor blocks
+    removed = _reconcile(conn, "salvation_army", "ingest", SimpleNamespace(bbox=bbox), seen)
+    assert removed == 0
+    assert _live_refs(conn, "salvation_army", bbox) == set(refs)
+
+
+@requires_db
+@pytest.mark.owner_only  # _reconcile is pipeline closure detection (deletes source rows) — owner role
+def test_reconcile_allows_legit_small_closure(conn):
+    """Happy path: a healthy run (saw 9 of 10) that retires a single absent link (10% < 40%,
+    seen >= floor) proceeds — exactly one link is reconciled away, the rest stay live."""
+    bbox = (43.0, -119.0, 44.0, -118.0)
+    refs = [f"close/{i}" for i in range(10)]
+    _seed_links(conn, "salvation_army", bbox, refs)
+    seen = set(refs[:9])  # close/9 is genuinely gone upstream
+    removed = _reconcile(conn, "salvation_army", "ingest", SimpleNamespace(bbox=bbox), seen)
+    assert removed == 1
+    assert _live_refs(conn, "salvation_army", bbox) == set(refs[:9])  # only close/9 retired

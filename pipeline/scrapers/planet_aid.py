@@ -6,9 +6,8 @@ from __future__ import annotations
 import logging
 import re
 
-import httpx
-
 from .base import BaseScraper, NormalizedRecord, load
+from .http import PoliteClient
 
 log = logging.getLogger("opendrop.planet_aid")
 
@@ -36,7 +35,7 @@ class PlanetAidScraper(BaseScraper):
         # adaptive grid: coarser for large regions so a statewide sweep isn't ~900 calls
         span = max(region.bbox[2] - region.bbox[0], region.bbox[3] - region.bbox[1])
         step = max(0.13, span / 18.0)
-        with httpx.Client(timeout=20, headers={"User-Agent": "OpenDrop/0.1 (civic open-data)"}) as client:
+        with PoliteClient(timeout=20, headers={"User-Agent": "OpenDrop/0.1 (civic open-data)"}) as client:
             for lat, lon in _grid(region.bbox, step):
                 try:
                     r = client.get(API, params={"latitude": lat, "longitude": lon})
