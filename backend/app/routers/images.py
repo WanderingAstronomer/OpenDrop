@@ -3,7 +3,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from .. import db
 from ..config import settings
 from ..deps import client_ip
-from ..imageproc import process_and_save
+from ..imageproc import media_total_bytes, process_and_save
 from ..models import ImageVoteIn
 from ..security import ip_hash, token_hash, verify_turnstile
 
@@ -13,14 +13,15 @@ router = APIRouter()
 @router.get("/locations/{loc_id}/images")
 async def list_images(loc_id: int, include_low: bool = False):
     """Photos for a location. Default: vouched ('visible') only, best first. include_low=true
-    also returns 'pending' (new/unverified) and 'hidden' (down-voted) for the gallery toggle."""
+    also returns 'pending' (new/unverified) and 'hidden' (down-voted) for the gallery toggle.
+    Operator-removed photos (removed_at set) are NEVER returned by either mode."""
     statuses = ["pending", "visible", "hidden"] if include_low else ["visible"]
     async with db.pool.connection() as conn:
         cur = await conn.execute(
             """SELECT id, path, score, upvotes, downvotes, status, applied,
                       (suggested_lat IS NOT NULL) AS is_correction
                FROM location_images
-               WHERE location_id = %s AND status = ANY(%s)
+               WHERE location_id = %s AND status = ANY(%s) AND removed_at IS NULL
                ORDER BY score DESC, created_at DESC""",
             (loc_id, statuses),
         )
@@ -44,6 +45,12 @@ async def upload_image(
     ip = client_ip(request)
     if not await verify_turnstile(turnstile_token, ip):
         raise HTTPException(403, {"code": "turnstile_failed", "message": "Turnstile verification failed"})
+
+    # Global media disk ceiling: refuse new photos once the volume is near full, so a flood can't
+    # exhaust host storage. Checked before reading/decoding the upload (cheap, cached total).
+    if media_total_bytes() >= settings.media_max_total_bytes:
+        raise HTTPException(507, {"code": "storage_full",
+                                  "message": "photo storage is temporarily full — please try again later"})
 
     raw = await file.read()
     if len(raw) > settings.image_max_bytes:
@@ -86,7 +93,13 @@ async def upload_image(
 
 @router.post("/images/{img_id}/vote")
 async def vote_image(img_id: int, body: ImageVoteIn, request: Request):
-    iph = ip_hash(client_ip(request))
+    ip = client_ip(request)
+    # Image votes auto-apply pin corrections at score >= 3, so gate them behind Turnstile too.
+    if not await verify_turnstile(body.turnstile_token, ip):
+        raise HTTPException(403, {"code": "turnstile_failed", "message": "Turnstile verification failed"})
+
+    iph = ip_hash(ip)
+    thash = token_hash(body.turnstile_token)
     helpful = body.vote == "helpful"
     async with db.pool.connection() as conn:
         async with conn.transaction():
@@ -95,9 +108,10 @@ async def vote_image(img_id: int, body: ImageVoteIn, request: Request):
             if await cur.fetchone() is None:
                 raise HTTPException(404, {"code": "not_found", "message": "image not found"})
             await conn.execute(
-                """INSERT INTO image_votes (image_id, ip_hash, helpful) VALUES (%s,%s,%s)
-                   ON CONFLICT (image_id, ip_hash) DO UPDATE SET helpful = EXCLUDED.helpful, created_at = now()""",
-                (img_id, iph, helpful),
+                """INSERT INTO image_votes (image_id, ip_hash, helpful, turnstile_hash) VALUES (%s,%s,%s,%s)
+                   ON CONFLICT (image_id, ip_hash) DO UPDATE
+                     SET helpful = EXCLUDED.helpful, turnstile_hash = EXCLUDED.turnstile_hash, created_at = now()""",
+                (img_id, iph, helpful, thash),
             )
         cur = await conn.execute(
             "SELECT score, upvotes, downvotes, status, applied FROM location_images WHERE id = %s", (img_id,)

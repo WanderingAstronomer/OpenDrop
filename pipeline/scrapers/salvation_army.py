@@ -5,9 +5,8 @@ from __future__ import annotations
 
 import logging
 
-import httpx
-
 from .base import BaseScraper, NormalizedRecord, load
+from .http import PoliteClient
 
 log = logging.getLogger("opendrop.salvation_army")
 
@@ -26,7 +25,7 @@ class SalvationArmyScraper(BaseScraper):
 
     def fetch(self, region):
         seen: set[str] = set()
-        with httpx.Client(timeout=30, headers={"User-Agent": "Mozilla/5.0 (OpenDrop civic open-data)"}) as client:
+        with PoliteClient(timeout=30, headers={"User-Agent": "Mozilla/5.0 (OpenDrop civic open-data)"}) as client:
             for zip_code in (region.zips or []):
                 try:
                     r = client.get(API, params={"Type": 3, "ZipCode": zip_code, "otid": 0})

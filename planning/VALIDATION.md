@@ -23,9 +23,9 @@ Source: [research/FINDINGS.md](../research/FINDINGS.md). Every finding is mapped
 | Org | Phase 1 verdict | Resolution | Where |
 |---|---|---|---|
 | Salvation Army | INGEST | `salvation_army.py` (ingest), ZIP-sweep satruck, dedupe on LocationGUID — the **primary stored** scraper | ARCH §7.3 |
-| Planet Aid | INGEST | `BaseScraper` (ingest) extension point; grid-sweep, dedupe on id | ARCH §7.2–7.3 |
-| USAgain | INGEST | `BaseScraper` (ingest) extension point; zip-sweep HTML, dedupe on lat/lon | ARCH §7.2–7.3 |
-| Wearable Collections | INGEST (geocode independently) | `BaseScraper` (ingest); **Nominatim** geocode, never Google `cid` coords | ARCH §7.3 / §9 |
+| Planet Aid | INGEST | `BaseScraper` (ingest) extension point (implemented); grid-sweep, dedupe on id | ARCH §7.2–7.3 |
+| USAgain | INGEST | `BaseScraper` (ingest) extension point (implemented); zip-sweep HTML, dedupe on lat/lon | ARCH §7.2–7.3 |
+| Wearable Collections | INGEST (geocode independently) | `BaseScraper` (ingest, implemented); **Nominatim** geocode, never Google `cid` coords | ARCH §7.3 / §9 |
 | Goodwill | ENRICH-ONLY (ToS) | `sources.storage_policy='enrich_only'`; scraper is a **pattern demo** that persists nothing (D1) | DATA_MODEL §1, §3 / ARCH §7.3 |
 | GreenDrop | SKIP (ToS) | Not a source; optional deep-link only | FINDINGS Matrix |
 | DAV | SKIP (no dataset) | Not a source | FINDINGS Matrix |
@@ -113,3 +113,17 @@ A 7-agent review stress-tested the draft spec (SQL correctness, API/schema/front
 **None.** All Phase 1 findings are mapped to an architectural resolution (Part A), and all Phase 2 review blockers/majors/minors are resolved in the planning docs (Part B). 
 
 **Phase 2 is closed. Construction (Phase 3) may begin from [BUILD_SEQUENCE.md](BUILD_SEQUENCE.md).**
+
+---
+
+## Addendum — post-Phase-2 additions
+
+This record is frozen as of Phase-2 close; the items below shipped afterward and are noted here for traceability only (no re-validation of the Phase-2 body is implied). Each is covered by automated tests rather than the manual design review above.
+
+- **Scrapers built out** beyond Salvation Army: Planet Aid, USAgain, and Wearable Collections now ingest (USAgain has no Ohio coverage; Wearable Collections is NYC-only). Goodwill remains enrich-only (persists nothing).
+- **Regions** (`pipeline/regions.py`): `columbus` (default), `ohio` (statewide), and a new `greater_ohio` multi-state sweep (Ohio + bordering MI/IN/KY/WV/PA). Covered by `tests/test_regions.py`.
+- **Community photos**: `location_images` + `image_votes` tables, gallery/upload/vote endpoints, and click-map pin correction that auto-applies once a correction photo reaches score ≥ 3 (migration 0004).
+- **Turnstile on image votes** (migration 0005 adds `image_votes.turnstile_hash`), mirroring the location-vote and photo-upload gates.
+- **Reconciliation circuit breaker** (`pipeline/scrapers/base.py`): closure-detection refuses to retire links when a run saw fewer than `RECONCILE_MIN_SEEN` records or would retire more than `RECONCILE_MAX_FRACTION` of a source's in-region links.
+- Image-vote and reconcile-breaker behavior are exercised by `backend/tests/test_api.py`.
+- **National coverage (50 states + DC + `usa`)**, all build-only (no live national seed run): data-driven regions derived from the vendored `pipeline/data/us_zips.csv`; a gentle, resumable per-state overnight seeder (`pipeline/seed_national.py`) checkpointed in `seed_progress` (migration 0008); polite HTTP client with backoff/pacing (`pipeline/scrapers/http.py`); OSM Overpass tiling for large regions; and a self-framing frontend (`/api/meta` `coverage` bbox → `fitToCoverage`). Covered by new tests: `tests/test_regions_national.py` (region derivation, no DB), `tests/test_http_polite.py` (retry/backoff/pacing, no DB/network), `tests/test_osm_tiling.py` (tile split/merge/dedup + fixture guard, no DB), and `backend/tests/test_seed_national.py` (resumability/checkpoint, DB-backed); `backend/tests/test_api.py` adds `coverage`-shape assertions.

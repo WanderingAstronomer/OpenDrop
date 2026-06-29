@@ -68,9 +68,9 @@ Every endpoint below was **probed live**. "Ingest" = first-party data, no auth, 
 
 **Key per-org specifics for Phase 2/3:**
 - **Salvation Army** — the cleanest ingest. `GET …/donategoods/locations?Type=3&ZipCode=NNNNN&otid=0` returns `Name, Address1/2, City, State, Zip, Latitude, Longitude, Hours, ContactPhone, Website, stable Id + LocationGUID, TypeName (DROPOFF/STORE/ARC)`. No bulk endpoint → **ZIP-centroid sweep + dedupe on `LocationGUID`**. Coverage weakest in NW (Seattle/Portland returned 0) → backfill from OSM. Hours/TypeName are free-text → normalize.
-- **Planet Aid** — `GET …/AzureSearch/sites?latitude=&longitude=` returns top-20 nearest: `id, geoPoint{lat,lng}, siteName, siteAddress (single string), siteTypeCode/Id`. **No hours/phone.** ~10k bins across ~14 states (Mid-Atlantic/Midwest/NE). → **lat/lng grid sweep + dedupe on `id`**; parse the combined address string ourselves.
-- **USAgain** — returns the **10 nearest** bins per zip as HTML with `new google.maps.LatLng(...)` markers (lat/lon are USAgain's own, not Google-licensed). 15 states only. All unattended 24/7 drop-off → set `drop_off=true`, attach a global accepted-items list. → **zip-sweep + dedupe on lat/lon**.
-- **Wearable Collections** — ~8 NYC GrowNYC greenmarket sites; **no coordinates in HTML** (only Google `cid` links, which are *not* redistributable). → store name/day/hours, **geocode via OSM/Nominatim or match GrowNYC**, not Google. Tiny → could be hand-curated.
+- **Planet Aid** — `GET …/AzureSearch/sites?latitude=&longitude=` returns top-20 nearest: `id, geoPoint{lat,lng}, siteName, siteAddress (single string), siteTypeCode/Id`. **No hours/phone.** ~10k bins across ~14 states (Mid-Atlantic/Midwest/NE). → **lat/lng grid sweep + dedupe on `id`**; parse the combined address string ourselves. *(now implemented — ingesting scraper.)*
+- **USAgain** — returns the **10 nearest** bins per zip as HTML with `new google.maps.LatLng(...)` markers (lat/lon are USAgain's own, not Google-licensed). 15 states only. All unattended 24/7 drop-off → set `drop_off=true`, attach a global accepted-items list. → **zip-sweep + dedupe on lat/lon**. *(now implemented — ingesting scraper; no Ohio coverage in practice.)*
+- **Wearable Collections** — ~8 NYC GrowNYC greenmarket sites; **no coordinates in HTML** (only Google `cid` links, which are *not* redistributable). → store name/day/hours, **geocode via OSM/Nominatim or match GrowNYC**, not Google. Tiny → could be hand-curated. *(now implemented — ingesting scraper; NYC-only.)*
 - **Goodwill** — donation sites cleanly separable via `cats=1` / `ci_servD` flag; 100-row/query cap → geo-tiling; nonce rotates (re-harvest from page). Excellent data, blocked only by ToS → enrich-only path (D1). *Independent regional Goodwills (e.g. goodwillcolumbus.org) may publish under different terms — a future per-region opt-in.*
 - **GreenDrop / DAV** — documented and parked. GreenDrop's data is excellent but ToS-blocked; DAV has effectively no national dataset (and note: **pickupplease.org is Vietnam Veterans of America, not a DAV partner** — corrects the directive's premise).
 
@@ -158,3 +158,14 @@ Every stored row will carry a `source` + `license`/`storage_policy` flag so the 
 - `columbus_query.overpassql`, `osm_columbus.json`, `osm_columbus_flat.json`, `analyze_osm.py` — OSM audit
 - `org_feed_columbus.json` — representative live Goodwill sample (subset of the 33 fetched)
 - `dedup_sample.py`, `dedup_candidates.json`, `dedup_sample_report.md` — dedup validation
+
+---
+
+## Addendum — post-Phase additions
+
+*This section is appended after the frozen Phase-1 record above. It does not re-run or revise the Phase-1 validation; it only notes what shipped afterward so this document does not mislead about the live system. See the named automated tests for verification rather than fresh manual checks.*
+
+- **Scrapers built per the recommendations:** Salvation Army, Planet Aid, USAgain, and Wearable Collections all ship as **ingesting** scrapers, plus OSM ingest and a Goodwill **enrich-only** scraper that persists nothing (matching D1). All are wired through `pipeline/seed.py` over a shared sweep+dedupe base (`pipeline/scrapers/base.py`). In practice USAgain has no Ohio coverage and Wearable Collections is NYC-only.
+- **Regions:** `pipeline/regions.py` defines `columbus` (default), `ohio` (statewide), and a newer `greater_ohio` multi-state region (Ohio + bordering MI/IN/KY/WV/PA) with a cross-state ZIP sweep list. Region selection is via the `REGION` env var; see `tests/test_regions.py`.
+- **Reconciliation circuit breaker:** the closure-detection path in `base.py` now refuses to retire source links when a run saw too few records (`RECONCILE_MIN_SEEN`, default 5) or would retire too large a fraction of a source's in-region links (`RECONCILE_MAX_FRACTION`, default 0.40); both env-overridable. Covered by the reconcile-breaker tests in `backend/tests/test_api.py`.
+- **Community photos + pin corrections:** later migrations add `location_images` / `image_votes` tables, an upload + helpful/unhelpful vote flow (Cloudflare Turnstile-gated, EXIF-stripped), and an auto-apply of a suggested pin correction once a correction photo reaches a vote score threshold. Image-vote behavior is covered by tests in `backend/tests/test_api.py`.

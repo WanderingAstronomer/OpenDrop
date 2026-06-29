@@ -1,5 +1,10 @@
-"""OSM ingest via Overpass (batch only — never called from the API). Falls back to the
-committed Phase-1 fixture so seeding is deterministic when Overpass is unreachable."""
+"""OSM ingest via Overpass (batch only — never called from the API).
+
+For national coverage a region bbox can be far too large for one Overpass query, so the bbox is
+split into <= OSM_TILE_DEGREES tiles, each queried (politely, with backoff) and merged/deduped by
+(type, id). Falls back to the committed Phase-1 fixture so seeding stays deterministic when
+Overpass is unreachable — but only when the region actually covers the fixture's metro (Columbus),
+so a national sweep never injects Columbus bins into, say, Montana."""
 from __future__ import annotations
 
 import json
@@ -7,18 +12,54 @@ import logging
 import os
 from pathlib import Path
 
-import httpx
-
 from .scrapers.base import BaseScraper, NormalizedRecord, load
+from .scrapers.http import PoliteClient
 
 log = logging.getLogger("opendrop.osm")
 
 FIXTURE = Path(__file__).resolve().parents[1] / "research" / "data" / "osm_columbus.json"
 DEFAULT_BBOX = os.environ.get("SEED_REGION_BBOX", "39.80,-83.25,40.18,-82.75")  # s,w,n,e
+_FIXTURE_CENTER = (39.96, -82.99)  # Columbus — the fixture's metro
 
 
-def _query(bbox: str) -> str:
-    s, w, n, e = bbox.split(",")
+def _tile_degrees() -> float:
+    try:
+        d = float(os.environ.get("OSM_TILE_DEGREES", "3.0"))
+    except (TypeError, ValueError):
+        d = 3.0
+    return d if d > 0 else 3.0
+
+
+def _tiles(bbox, step: float):
+    """Split (s, w, n, e) into <= step-degree tiles, walking south->north, west->east.
+    A bbox smaller than one tile yields itself."""
+    s, w, n, e = bbox
+    lat = s
+    while lat < n:
+        lat2 = min(lat + step, n)
+        lon = w
+        while lon < e:
+            lon2 = min(lon + step, e)
+            yield (lat, lon, lat2, lon2)
+            lon = lon2
+        lat = lat2
+
+
+def _region_bbox(region):
+    if hasattr(region, "bbox"):
+        return tuple(region.bbox)
+    s, w, n, e = (float(x) for x in (region or DEFAULT_BBOX).split(","))
+    return (s, w, n, e)
+
+
+def _covers_fixture(bbox) -> bool:
+    s, w, n, e = bbox
+    la, lo = _FIXTURE_CENTER
+    return s <= la <= n and w <= lo <= e
+
+
+def _query(bbox) -> str:
+    s, w, n, e = bbox
     b = f"{s},{w},{n},{e}"
     return f"""[out:json][timeout:90];
 (
@@ -86,26 +127,55 @@ class OsmScraper(BaseScraper):
     code = "osm"
 
     def fetch(self, region):
-        bbox = region.bbox_str if hasattr(region, "bbox_str") else (region or DEFAULT_BBOX)
-        data = self._overpass(bbox)
-        if data is None:
-            log.warning("Overpass unavailable; using committed fixture %s", FIXTURE)
-            data = json.loads(FIXTURE.read_text(encoding="utf-8"))
-        for el in data.get("elements", []):
+        bbox = _region_bbox(region)
+        elements = self._collect(bbox)
+        if elements is None:
+            # Every tile failed (Overpass unreachable). Use the committed fixture ONLY for regions
+            # that actually cover its metro, so a national run never seeds Columbus bins elsewhere.
+            if _covers_fixture(bbox):
+                log.warning("Overpass unavailable; using committed fixture %s", FIXTURE)
+                elements = json.loads(FIXTURE.read_text(encoding="utf-8")).get("elements", [])
+            else:
+                log.warning("Overpass unavailable for bbox %s; no OSM records this run", bbox)
+                elements = []
+        seen: set[tuple] = set()
+        for el in elements:
+            key = (el.get("type"), el.get("id"))
+            if key in seen:
+                continue  # the same node can fall in two adjacent tiles
+            seen.add(key)
             rec = _to_record(el)
             if rec is not None:
                 yield rec
 
-    @staticmethod
-    def _overpass(bbox: str):
+    def _collect(self, bbox):
+        """Tile the bbox, query each cell politely, and merge elements. Returns the element list,
+        or None if EVERY tile failed (so the caller can decide whether to fall back to the fixture).
+        A run where at least one tile succeeded — even with zero elements — returns a list."""
         url = os.environ.get("OVERPASS_URL", "https://overpass-api.de/api/interpreter")
+        tiles = list(_tiles(bbox, _tile_degrees()))
+        elements: list = []
+        any_ok = False
+        with PoliteClient(timeout=180, headers={"User-Agent": "OpenDrop/0.1 (civic open-data)"}) as client:
+            for i, tb in enumerate(tiles, 1):
+                data = self._overpass(client, url, tb)
+                if data is None:
+                    continue
+                any_ok = True
+                got = data.get("elements", [])
+                elements.extend(got)
+                if len(tiles) > 1:
+                    log.info("osm tile %d/%d %s -> %d elements", i, len(tiles), tb, len(got))
+        return elements if any_ok else None
+
+    @staticmethod
+    def _overpass(client, url, bbox):
         try:
-            r = httpx.post(url, content=_query(bbox).encode(),
-                           headers={"User-Agent": "OpenDrop/0.1 (civic open-data)"}, timeout=120)
+            r = client.post(url, content=_query(bbox).encode())
             r.raise_for_status()
             return r.json()
         except Exception as e:  # noqa: BLE001
-            log.warning("Overpass fetch failed: %s", e)
+            log.warning("Overpass tile %s failed: %s", bbox, e)
             return None
 
 

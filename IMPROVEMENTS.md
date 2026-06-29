@@ -5,18 +5,29 @@
 ## ✅ Shipped since this scan
 
 - **0.1 AGPL-3.0 LICENSE** (+ ODbL dataset / CC0-submissions documented).
-- **0.2 CI is real** — GitHub Actions (postgis service, ruff, all migrations, `pytest`), unified `pytest.ini`, `requirements-dev.txt`, Makefile. 21/21 tests pass.
+- **0.2 CI is real** — GitHub Actions (postgis service, ruff, all migrations, `pytest`), unified `pytest.ini`, `requirements-dev.txt`, Makefile. 50/50 tests pass.
 - **0.3 Scheduled re-sync** — `pipeline/sync.py` + opt-in `scheduler` compose profile; **+ closure/deletion detection** in the loader (region-scoped). *(Surfaced and fixed a real `LEAST(85,NULL)=85` confidence bug — migration 0002 + regression test.)*
 - **0.4 Secrets fail-fast guard** (`APP_ENV=prod` refuses default salt/Turnstile-test-key/DB password).
 - **0.6 nginx security headers + gzip**; **read rate-limiting** (api 20 r/s, export 6 r/m → 429).
 - **0.7 `.dockerignore`**; **0.8 backups** (`scripts/backup.sh`/`restore.sh` + docs).
-- **P1 Planet Aid scraper** (+80 real Columbus bins) + **region config** (`pipeline/regions.py`).
+- **P1 scrapers**: **Planet Aid**, **USAgain** (no Ohio coverage yet), **Wearable Collections** (NYC-only), plus the existing Salvation Army + OSM ingest and Goodwill (enrich-only). All wired into `pipeline/seed.py`.
+- **P1 region config** (`pipeline/regions.py`) — `columbus` (default), `ohio` (statewide), and **`greater_ohio`** (multi-state: Ohio + bordering MI/IN/KY/WV/PA, with a cross-state ZIP sweep). Selected via `REGION` env.
+- **P1 data-quality gate** — `base.py` `_in_us` rejects out-of-US / `0,0` / swapped-lat-lon coords and tallies rejects into `scrape_log.detail`.
+- **P1 reconciliation circuit breaker** — closure detection refuses to retire links when a run saw `< RECONCILE_MIN_SEEN` (default 5) records, or would retire `> RECONCILE_MAX_FRACTION` (default 0.40) of a source's in-region links; both env-overridable, region-scoped, skipped on any per-record error.
 - **P1 submission content-screen** (reject links/emails/control-chars).
 - **P1 prod compose + Caddy TLS**, non-root container, api/web healthchecks, least-privilege DB role (`deploy/app_role.sql`).
-- **P1 a11y/UX**: loading/empty/error states, focus management/ESC on the submit dialog, label/ARIA, aria-live toasts, reduced-motion.
+- **P1 a11y/UX**: loading/empty/error states, focus management/ESC on the submit dialog, label/ARIA, aria-live toasts, reduced-motion, **keyboard/screen-reader list view + category filter** (`frontend/js/list.js`).
+- **`consignment` org_type** (migration 0003) added after `thrift_store`.
+- **Community photos + photo voting + photo-validated pin correction** (migration 0004 + `routers/images.py` + `frontend/js/photos.js`): upload with EXIF-strip + Turnstile + per-IP daily cap, helpful/unhelpful votes, auto-applied pin correction once a correction photo reaches score ≥ 3.
+- **Turnstile on image votes** (migration 0005 adds `image_votes.turnstile_hash`) — mirrors the location-vote + photo-upload gates.
+- **Drag-to-fix pin corrections + community signals + engagement-tiered trust** (migrations 0006/0007 + `routers/corrections.py` + `frontend/js/corrections.js`, `attributes.js`, `pindrag.js`): drag a pin to suggest a position, applied automatically once it clears an **engagement-tiered** support threshold (Cold <3 / Warm 3–14 / Hot 15+ distinct contributions). A correction is **anchored to the pin's immutable `origin_geom`** and capped at **2 km** (API guard + DB trigger) so it can't be walked across town; optional **GPS corroboration** is computed on-device and sent as a **boolean only** (coordinates never stored/correlated/sold; GPS only boosts, never gates a good-faith fix). Retirement now requires deny support to **strictly** outweigh confirmations. Per-attribute value bounds + per-IP daily caps on corrections/ratings. *Accepted tradeoff:* a lone Warm submitter with self-asserted GPS can still auto-apply a fix, deliberately bounded by the 2 km cap + origin anchor + Turnstile.
+- **Drop-a-pin submission + reverse geocode** (`/api/reverse`, `submit.js`): add a location by dragging a marker; the street address auto-fills.
+- **Light/dark theme system** (`theme.js` + first-paint inline boot, CSP-hash-whitelisted so it can't be XSS-injected) with an auto + manual toggle; Turnstile theme follows the mode.
+- **Focus management & a11y hardening** (resolves the P1 *Focus management* item): popover, drag-to-fix sheet, photo gallery/upload modals, and submit panel now capture/restore focus, trap Tab (modals), expose `aria-modal`/`role=dialog`/`aria-pressed`, and the search box is a keyboard-navigable combobox listbox (arrow keys + `aria-activedescendant`). Darkened `--ink-3` to meet **WCAG AA** contrast.
 - **New features**: **location search** (`/api/geosearch`), **"use my location"**, **zoom-out cap**, satellite-mode contrast, persisted basemap.
+- **National coverage (all 50 states + DC)** — the region layer is now **data-driven** from a vendored ZIP table (`pipeline/data/us_zips.csv`): `state_regions()` synthesizes a region per state (bbox derived from each state's ZIP centroids) plus a `usa` union, selectable via `REGION=<code>` / `REGION=usa` alongside the curated `columbus`/`ohio`/`greater_ohio`. Shipped with: a **gentle, resumable overnight seeder** (`pipeline/seed_national.py` + `scripts/seed_national.sh`) checkpointed per-state in the new `seed_progress` table (**migration 0008**) — interruptible and re-runnable, with a once-at-the-end dedup/promote finalize and a `SEED_FORCE` override; **scraper politeness/backoff** (see below); **OSM national tiling** (see below); and a self-framing frontend — `/api/meta` now returns a `coverage` bbox/center and the map fits to whatever data is actually loaded (Columbus seed → Columbus view, national seed → continent), defaulting to a US view. *Build-only by design: the capability + seeder ship, but no live national seed is run here — it's meant to be kicked off deliberately against the live APIs.*
 
-Remaining open items below are the still-unaddressed P1/P2 entries (keyboard map list-view, DB pool tuning, hours normalization, incremental dedup, CSV export, SRI, i18n, salt rotation, etc.).
+Remaining open items below are the still-unaddressed P1/P2 entries (DB pool tuning, hours normalization, incremental dedup, CSV export, SRI, i18n, salt rotation, etc.).
 
 ## What's already strong (don't regress)
 - **Security fundamentals:** all SQL parameterized; XSS-safe output (`esc()`); race-safe vote cooldown (`pg_advisory_xact_lock`); trusted `X-Real-IP` (spoofed XFF can't bypass cooldown, with a test); raw IPs never stored (salted hashes); Turnstile fails closed.
@@ -49,12 +60,12 @@ Remaining open items below are the still-unaddressed P1/P2 entries (keyboard map
 - **Moderation/takedown policy + tool** (M/S) — `location_status='hidden'` exists but nothing sets it; no takedown channel for a wrongly-listed address/residence. Add `MODERATION.md` + `python -m pipeline.hide <id>` + a README contact. (civic)
 
 **Data & pipeline (the national thesis)**
-- **Deletion / closure detection** (H/L) — loader only inserts/upserts; a closed store/bin never disappears (the exact staleness failure OpenDrop exists to beat). Reconcile per source+region: links not seen in N runs → remove (trigger already drops confidence). (`scrapers/base.py`, `store.py`)
-- **Implement the 3 orphan scrapers** (H/L) — `planet_aid`, `usagain`, `wearable_collections` are pre-registered in the `sources` catalog (overstating coverage) but have **no scraper**; FINDINGS already specifies their endpoints/dedup keys. Planet Aid (~10k bins) is the cleanest and biggest bin-coverage win. (`pipeline/scrapers/`)
-- **Region abstraction** (M/L) — coverage is hardcoded to Columbus (ZIP list / seed point / bbox). Move to a regions config / ZIP-centroid generator so a new metro is *data, not code*. (`scrapers/*`, `config.py`)
-- **Scraper retry/backoff + politeness** (M/M) — back-to-back ZIP sweeps with no delay/retry; a transient failure is a silent coverage hole. Shared httpx helper with backoff + inter-request sleep + `Retry-After`. (`scrapers/*`)
-- **OSM fixture-fallback hazard** (M/S) — any Overpass failure silently substitutes the committed Columbus fixture and logs success — fine for the demo, a correctness hazard in a scheduled national run. Gate behind `OSM_ALLOW_FIXTURE`; record fixture use in `scrape_log`. (`osm_ingest.py`)
-- **Data-quality gate** (M/S) — validate coords fall in a US bbox (catch 0,0 / swapped lat-lon), reject empty names; count rejects in `scrape_log.detail`. (`scrapers/base.py`)
+- ~~**Deletion / closure detection** (H/L)~~ — **DONE** (see Shipped). Reconciliation in `scrapers/base.py` `_reconcile` retires links not seen in a run (region-scoped), now guarded by the circuit breaker (`RECONCILE_MIN_SEEN` / `RECONCILE_MAX_FRACTION`).
+- ~~**Implement the 3 orphan scrapers** (H/L)~~ — **DONE** (see Shipped). `planet_aid`, `usagain`, and `wearable_collections` now have real scrapers wired into `pipeline/seed.py` (USAgain has no Ohio coverage; Wearable Collections is NYC-only).
+- ~~**Region abstraction** (M/L)~~ — **DONE** (see Shipped). `pipeline/regions.py` defines `columbus` / `ohio` / `greater_ohio` as data, selected via `REGION` env.
+- ~~**Scraper retry/backoff + politeness** (M/M)~~ — **DONE** (see Shipped). `scrapers/http.py` `PoliteClient` adds inter-request pacing, exponential backoff with jitter, and `Retry-After` / 429 / 5xx handling (all env-tunable); covered by `tests/test_http_polite.py`.
+- ~~**OSM fixture-fallback hazard** (M/S)~~ — **DONE** (see Shipped). The specific national hazard is closed: `osm_ingest.fetch` now substitutes the committed Columbus fixture **only when the region bbox actually covers Columbus** (`_covers_fixture`), so a national/other-state run can never seed Columbus bins elsewhere — it logs and yields nothing for that region instead. (*Still open as polish: an explicit `OSM_ALLOW_FIXTURE` off-switch and recording fixture use in `scrape_log`.*) Covered by `tests/test_osm_tiling.py`.
+- ~~**Data-quality gate** (M/S)~~ — **DONE** (see Shipped). `base.py` `_in_us` rejects out-of-US / `0,0` / swapped-lat-lon coords and counts rejects in `scrape_log.detail`.
 
 **Ops & deploy**
 - **Prod compose + TLS** (H/M) — only a dev compose exists (plain HTTP, raw ports). Add `docker-compose.prod.yml` + a TLS reverse proxy (Caddy = auto-LetsEncrypt + HSTS in ~3 lines). README claims prod is "configured" — it isn't yet. (`docker-compose.yml`, README)
@@ -64,8 +75,8 @@ Remaining open items below are the still-unaddressed P1/P2 entries (keyboard map
 - **DB pool sizing/timeouts from env + `db_unavailable` 503 guard** (M/S) — pool is hardcoded `max_size=10`, no `statement_timeout`; routers assume `db.pool` non-None (cold start → opaque 500). (`db.py`, routers)
 
 **Accessibility & UX (core function is non-visual-inaccessible)**
-- **Keyboard/SR access to the map** (H/L) — markers are mouse-click-only; a screen-reader user gets an empty region. Add a togglable, focusable **list view** of in-viewport locations synced to `render()`. (`markers.js`)
-- **Focus management** (H/M) — submit panel & popover never receive focus, no ESC-to-close, no focus trap, and the panel stays `aria-hidden=true` even when open. (`submit.js`, `popover.js`)
+- ~~**Keyboard/SR access to the map** (H/L)~~ — **DONE** (see Shipped). `frontend/js/list.js` adds a togglable, focusable keyboard/screen-reader **list view** plus a category filter.
+- ~~**Focus management** (H/M)~~ — **DONE** (see Shipped). Popover, drag-to-fix sheet, photo modals, and submit panel capture/restore focus, trap Tab (modals), and toggle `aria-hidden`/`aria-modal` correctly; ESC closes; search is a combobox listbox. (`submit.js`, `popover.js`, `corrections.js`, `photos.js`, `search.js`)
 - **Loading / empty / error states** (H/M) — a zero-result viewport or a down API shows a **silent blank map**. Add spinner + "no locations here" + "couldn't reach server" states. (`main.js`, `markers.js`)
 - **"Locate me" + click-to-place + geocode preview** (M/L) — mobile users at a bin must type a full address and never see where it landed; map always opens at hardcoded Columbus. (`map.js`, `submit.js`)
 - **Real `<form>` semantics** (M/M) — submit is loose inputs on a div: no Enter-to-submit, no native validation, State accepts any 2 chars. (`submit.js`)
@@ -93,8 +104,8 @@ Remaining open items below are the still-unaddressed P1/P2 entries (keyboard map
 1. **0.1 LICENSE**, **0.4 secrets guard**, **0.7 `.dockerignore`**, **0.6 nginx headers+gzip**, **0.8 backups doc** — all small, all close real gaps.
 2. **0.2 pytest-in-image + GitHub Actions CI** — makes the existing tests a real gate.
 3. **0.5 read caching** + **P1 read rate-limit** — perf + abuse-cost bound together.
-4. **0.3 scheduled re-sync** + **P1 deletion detection** — make freshness real (the mission).
-5. **P1 Planet Aid scraper** — proves the multi-source/national path with the biggest bin win.
-6. **P1 moderation gate** + **a11y list-view/focus/empty-states** — trust + inclusivity before any public launch.
+4. ~~**0.3 scheduled re-sync** + **P1 deletion detection**~~ — **DONE** (deletion detection now has a reconciliation circuit breaker).
+5. ~~**P1 Planet Aid scraper**~~ — **DONE** (Planet Aid + USAgain + Wearable Collections all shipped).
+6. **P1 moderation gate** + ~~a11y list-view~~/focus/empty-states — list-view shipped; moderation gate + focus management remain for trust + inclusivity before any public launch.
 
 *(This pass implemented several P0/P2 quick wins — see the commit following this file.)*

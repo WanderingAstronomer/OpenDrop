@@ -164,10 +164,15 @@ opendrop/
 ├── pipeline/
 │   ├── osm_ingest.py (or .js)
 │   ├── dedup.py
+│   ├── regions.py          ← added post-Phase 4 (columbus/ohio/greater_ohio)
 │   └── scrapers/
-│       ├── goodwill.py
-│       └── salvation_army.py
-├── migrations/
+│       ├── base.py         ← shared scraper/loader + reconcile circuit breaker
+│       ├── goodwill.py     ← enrich-only (persists nothing)
+│       ├── salvation_army.py
+│       ├── planet_aid.py
+│       ├── usagain.py
+│       └── wearable_collections.py
+├── migrations/             ← 0001_init … 0005_image_vote_turnstile (see Addendum)
 ├── scripts/
 │   └── seed.sh
 ├── docker-compose.yml
@@ -180,3 +185,16 @@ opendrop/
 ## Begin
 
 Start Phase 1 now. Do not summarize this document back. Do not ask for confirmation. Execute.
+
+---
+
+## Addendum — post-Phase-4 additions
+
+This directive is a frozen, dated point-in-time record. The body above is preserved as written. The following shipped *after* the original Phase 4 validation and supersede a few specifics in the narrative; the authoritative current spec lives in `planning/ARCHITECTURE.md` and `research/FINDINGS.md`.
+
+- **Scrapers.** Beyond the original Goodwill + Salvation Army pattern pair, the pipeline now ships ingesting scrapers for Planet Aid, USAgain, and Wearable Collections, all wired into `pipeline/seed.py` on a shared base in `pipeline/scrapers/base.py`. Goodwill is enrich-only and persists nothing. (USAgain has no Ohio coverage; Wearable Collections is NYC-only.)
+- **Regions.** `pipeline/regions.py` defines `columbus` (default), `ohio` (statewide), and `greater_ohio` (multi-state: Ohio plus bordering MI/IN/KY/WV/PA). Selected via the `REGION` env var; `SEED_REGION_BBOX` still overrides the `columbus` bbox only. This relaxes the original single-region assumption.
+- **Migrations.** The on-disk chain is `0001_init` → `0002_fix_source_component` → `0003_add_consignment` (adds the `consignment` org_type) → `0004_images` (community photos: `location_images` + `image_votes`, `image_status` enum, pin-correction auto-apply) → `0005_image_vote_turnstile` (Turnstile hash on image votes). Applied in order via `scripts/migrate.sh` against a `schema_migrations` ledger.
+- **Reconciliation circuit breaker.** `pipeline/scrapers/base.py` closure-detection now refuses to retire links when a run saw fewer than `RECONCILE_MIN_SEEN` (default 5) records, or would retire more than `RECONCILE_MAX_FRACTION` (default 0.40) of a source's in-region links. Both env-overridable.
+- **Community photos + Turnstile on image votes.** New endpoints under `backend/app/routers/` cover the image gallery, photo upload (EXIF-strip + per-IP daily cap), Turnstile-gated image voting, and a Nominatim-backed geosearch proxy. Frontend gained `list.js`, `photos.js`, and `search.js`.
+- **Automated tests.** These additions are now covered by automated tests rather than the manual Phase 4 checklist: `backend/tests/test_api.py` (image-vote and reconcile-breaker cases) and `tests/test_regions.py` (region selection/bbox). No fresh manual validation pass is claimed here.

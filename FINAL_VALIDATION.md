@@ -5,8 +5,8 @@
 ## Environment
 
 - `docker compose up -d --build` → `db` (PostGIS, healthy), `api` (FastAPI, :8001→8000), `web` (nginx, :8080→80). API host port moved 8000→8001 (8000 was occupied by another project on the host); the map is served at **http://localhost:8080**.
-- Migration `0001_init.sql` applied automatically via the initdb mount — proven by the schema-aware healthcheck (`SELECT 1 FROM sources`) passing.
-- `bash scripts/seed.sh` seeded the Columbus, OH metro from **live** sources: OSM (42, via Overpass 200), Salvation Army (13 fetched, 1 auto-deduped on ingest), Goodwill (enrich-only, persisted 0). **54 active locations** (24 charity_store, 19 thrift_store, 8 donation_center, 3 drop_bin).
+- Migration `0001_init.sql` applied automatically via the initdb mount — proven by the schema-aware healthcheck (`SELECT 1 FROM sources`) passing. (As of this snapshot only `0001` had been applied; migrations `0002`–`0005` are now applied in order via the `schema_migrations` ledger — see Addendum.)
+- `bash scripts/seed.sh` seeded the Columbus, OH metro from **live** sources: OSM (42, via Overpass 200), Salvation Army (13 fetched, 1 auto-deduped on ingest), Goodwill (enrich-only, persisted 0). **54 active locations** (24 charity_store, 19 thrift_store, 8 donation_center, 3 drop_bin). (Seed now also runs Planet Aid, USAgain, and Wearable Collections — see Addendum.)
 
 ---
 
@@ -15,7 +15,7 @@
 | Endpoint | Result | Evidence |
 |---|---|---|
 | `GET /api/health` | **PASS** | `{"status":"ok","db":true}` (direct + via nginx proxy) |
-| `GET /api/meta` | **PASS** | 54 active; `sources` = osm + salvation_army (ingest-only, enrich excluded); sitekey + buckets present |
+| `GET /api/meta` | **PASS** | 54 active; `sources` = osm + salvation_army (ingest-only, enrich excluded); sitekey + buckets present (the ingest scrapers added since this snapshot — planet_aid, usagain, wearable_collections — also surface here when active; see Addendum) |
 | `GET /api/locations` (points) | **PASS** | `mode:"points"`, GeoJSON FeatureCollection, 47 features in bbox, props `{id,name,org_type,confidence,bucket}` |
 | `GET /api/locations` (clusters) | **PASS** | `cluster=on` → `mode:"clusters"`, 40 grid clusters with `count`/`avg_confidence` |
 | `GET /api/locations/{id}` | **PASS** | Full detail incl. decomposed `lat/lon`, `address{}`, `sources[]` (with attribution); `merged`→404+`canonical_id` path present |
@@ -73,3 +73,15 @@
 ## Conclusion
 
 `docker compose up` + `bash scripts/seed.sh` produces a working browser map of real Ohio donation locations at http://localhost:8080, with functional confirm/deny voting (confidence updates live, including community retirement of multi-source rows), a working geocoded submission flow, ODbL + source attribution visible, deduplication that merges dirty records correctly, and no enrich-only (Goodwill) data in the redistributable export. **All Phase 4 items PASS. No OPEN items.**
+
+---
+
+## Addendum — post-Phase-4 additions
+
+This record is a frozen Phase-4 snapshot (2026-06-27). The validation numbers and results above are **not** re-run here. The items below shipped *after* this snapshot; rather than claim a fresh manual validation, they are covered by automated tests (`backend/tests/test_api.py`, `tests/test_regions.py`).
+
+- **Community photos + Turnstile-gated image votes + pin correction.** Migration `0004_images.sql` adds `location_images` / `image_votes` tables, the `image_status` enum (`pending`/`visible`/`hidden`), `recompute_image()`, and the `trg_after_image_vote` trigger; `0005_image_vote_turnstile.sql` adds `image_votes.turnstile_hash`. New endpoints: `GET`/`POST /api/locations/{id}/images` (gallery + upload with EXIF-strip and per-IP daily cap) and `POST /api/images/{id}/vote` (now Turnstile-gated; advisory-locked). A correction photo that reaches score ≥ 3 auto-moves the canonical location pin to the suggested coords. Covered by the image-vote tests in `backend/tests/test_api.py`.
+- **Three additional ingest scrapers.** Planet Aid, USAgain, and Wearable Collections are now wired into `pipeline/seed.py` (USAgain has no Ohio coverage; Wearable Collections is NYC-only). These join OSM and Salvation Army as ingest sources, alongside Goodwill (still enrich-only, persists nothing).
+- **`consignment` org_type.** Migration `0003_add_consignment.sql` adds `consignment` to the `org_type` enum (after `thrift_store`); the API model literal includes it.
+- **`greater_ohio` region.** `pipeline/regions.py` adds a multi-state region (Ohio + bordering MI/IN/KY/WV/PA) with a cross-state ZIP sweep, selectable via the `REGION` env var. Covered by `tests/test_regions.py`.
+- **Reconciliation circuit breaker.** `pipeline/scrapers/base.py` `_reconcile` now refuses closure-retirement when a run saw fewer than `RECONCILE_MIN_SEEN` (default 5) records, or would retire more than `RECONCILE_MAX_FRACTION` (default 0.40) of a source's current in-region links. Both env-overridable; already skipped when a run had per-record errors. Covered by the reconcile-breaker tests in `backend/tests/test_api.py`.

@@ -3,6 +3,7 @@ drives them all identically, honoring sources.storage_policy (ingest persists; e
 from __future__ import annotations
 
 import logging
+import os
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
 from typing import Iterable, Optional
@@ -43,9 +44,27 @@ class BaseScraper(ABC):
 # Continental + AK/HI/PR-ish bounding box; rejects 0,0 and swapped lat/lon.
 _US = (17.5, -180.0, 72.0, -64.0)  # (south, west, north, east)
 
+# Closure-detection guardrails. A truncated/blocked upstream response (the API returned 3 of
+# its usual 800 sites, got rate-limited, or changed schema) makes almost every existing link
+# look "absent" — and the naive reconcile would then mass-retire a whole region. We refuse to
+# reconcile when a run saw too few records, or when it would retire more than a fraction of a
+# source's current in-region links. Both are env-overridable for a deliberate operator re-sync.
+_RECONCILE_MAX_FRACTION = float(os.environ.get("RECONCILE_MAX_FRACTION", "0.40"))
+_RECONCILE_MIN_SEEN = int(os.environ.get("RECONCILE_MIN_SEEN", "5"))
+
 
 def _in_us(lat, lon) -> bool:
     return lat is not None and lon is not None and _US[0] <= lat <= _US[2] and _US[1] <= lon <= _US[3]
+
+
+# The 50 states + DC — the same universe as data/us_zips.csv (our data-driven region source). The DB
+# CHECK only enforces the two-letter *format*, so an upstream feed can hand us a well-formed but bogus
+# code (satruck.org returned "PE" for Pennsylvania ARCs). Reject by membership, not just shape, so a
+# bad code becomes NULL (and the coord-based backfill can recover it) instead of a phantom "state".
+US_STATES = frozenset(
+    "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH "
+    "NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY".split()
+)
 
 
 def _enrich(rec: NormalizedRecord) -> dict:
@@ -53,7 +72,7 @@ def _enrich(rec: NormalizedRecord) -> dict:
     d["brand_key"] = brand_key(rec.org_name, rec.name)
     d["house_number"] = normalize_house_number(rec.address_line)
     s = (d.get("state") or "").strip().upper()
-    d["state"] = s if (len(s) == 2 and s.isalpha()) else None  # else NULL (avoid the state CHECK)
+    d["state"] = s if s in US_STATES else None  # else NULL (bogus/foreign code -> let backfill recover)
     return d
 
 
@@ -66,21 +85,56 @@ def _reconcile(conn, code, policy, region, seen) -> int:
     that were NOT seen in this run (the source no longer lists them). Scoped to the region so a
     partial/regional sweep can't mass-delete other regions. The source-delete trigger then
     recomputes affected locations' confidence (a row with no ingest source falls below the floor).
-    Only runs for ingest sources with a non-empty result set (a 0-result run never deletes)."""
+    Only runs for ingest sources with a non-empty result set (a 0-result run never deletes).
+
+    Circuit breaker: count the source's *current* in-region links and how many this run would
+    retire BEFORE deleting anything. If the run saw fewer than `_RECONCILE_MIN_SEEN` records, or
+    would retire more than `_RECONCILE_MAX_FRACTION` of those links, we treat it as a truncated/
+    blocked upstream response (not a wave of real closures) and skip — keeping a stale link is far
+    cheaper to recover from than silently deleting a region's worth of live ones."""
     if policy != "ingest" or not seen or not hasattr(region, "bbox"):
         return 0
     s, w, n, e = region.bbox
+    env = (w, s, e, n)  # ST_MakeEnvelope(xmin=lon_w, ymin=lat_s, xmax=lon_e, ymax=lat_n)
+
+    current = conn.execute(
+        """SELECT count(*) AS n FROM location_sources
+           WHERE source_code = %s AND source_geom && ST_MakeEnvelope(%s, %s, %s, %s, 4326)""",
+        (code, *env),
+    ).fetchone()["n"]
+    if current == 0:
+        return 0
+
+    would = conn.execute(
+        """SELECT count(*) AS n FROM location_sources
+           WHERE source_code = %s
+             AND source_geom && ST_MakeEnvelope(%s, %s, %s, %s, 4326)
+             AND NOT (source_ref::text = ANY(%s))""",
+        (code, *env, list(seen)),
+    ).fetchone()["n"]
+    if would == 0:
+        return 0
+
+    if len(seen) < _RECONCILE_MIN_SEEN or would > current * _RECONCILE_MAX_FRACTION:
+        log.warning(
+            "%s: SKIPPING closure-detection — run would retire %d of %d in-region link(s) "
+            "(seen=%d, max_fraction=%.0f%%, min_seen=%d). Looks like a truncated/blocked upstream "
+            "response, not real closures. Set RECONCILE_MAX_FRACTION / RECONCILE_MIN_SEEN to force.",
+            code, would, current, len(seen), _RECONCILE_MAX_FRACTION * 100, _RECONCILE_MIN_SEEN,
+        )
+        return 0
+
     rows = conn.execute(
         """DELETE FROM location_sources
            WHERE source_code = %s
              AND source_geom && ST_MakeEnvelope(%s, %s, %s, %s, 4326)
              AND NOT (source_ref::text = ANY(%s))
            RETURNING location_id""",
-        (code, w, s, e, n, list(seen)),
+        (code, *env, list(seen)),
     ).fetchall()
     conn.commit()
     if rows:
-        log.info("%s: reconciled %d closed/absent location-link(s) in region", code, len(rows))
+        log.info("%s: reconciled %d of %d in-region location-link(s) as closed/absent", code, len(rows), current)
     return len(rows)
 
 

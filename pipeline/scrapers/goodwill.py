@@ -15,9 +15,8 @@ from __future__ import annotations
 import logging
 import re
 
-import httpx
-
 from .base import BaseScraper, NormalizedRecord, load
+from .http import PoliteClient
 
 log = logging.getLogger("opendrop.goodwill")
 
@@ -30,7 +29,7 @@ class GoodwillScraper(BaseScraper):
     code = "goodwill"
 
     def fetch(self, region):
-        with httpx.Client(timeout=30, headers={"User-Agent": "Mozilla/5.0 (OpenDrop civic open-data)"}) as client:
+        with PoliteClient(timeout=30, headers={"User-Agent": "Mozilla/5.0 (OpenDrop civic open-data)"}) as client:
             nonce = self._nonce(client)
             if not nonce:
                 log.warning("goodwill: could not harvest nonce; no records")
@@ -74,7 +73,7 @@ class GoodwillScraper(BaseScraper):
                 )
 
     @staticmethod
-    def _nonce(client: httpx.Client) -> str | None:
+    def _nonce(client: PoliteClient) -> str | None:
         try:
             html = client.get(LOCATOR).text
         except Exception as e:  # noqa: BLE001

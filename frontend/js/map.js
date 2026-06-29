@@ -17,16 +17,25 @@ export function initMap() {
     { maxZoom: 19, attribution: "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community" }
   );
 
-  const bases = { "Streets (light)": streetsLight, "Streets (detailed)": streetsDetailed, Satellite: satellite };
+  const bases = { Light: streetsLight, Detailed: streetsDetailed, Satellite: satellite };
 
   let saved = null;
   try { saved = localStorage.getItem("opendrop_basemap"); } catch (e) { /* private mode */ }
-  const initialName = bases[saved] ? saved : "Streets (light)";
+  const initialName = bases[saved] ? saved : "Light";
 
   const map = L.map("map", { zoomControl: true, minZoom: MIN_ZOOM, layers: [bases[initialName]] })
     .setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
 
-  L.control.layers(bases, {}, { position: "topright", collapsed: false }).addTo(map);
+  const layersCtl = L.control.layers(bases, {}, { position: "topright", collapsed: false }).addTo(map);
+  // Title the basemap card and tag it for styling (segmented-control look lives in style.css).
+  const layersEl = layersCtl.getContainer();
+  layersEl.classList.add("odc-basemaps");
+  const listEl = layersEl.querySelector(".leaflet-control-layers-base");
+  if (listEl) {
+    const h = L.DomUtil.create("div", "odc-basemaps-t", listEl);
+    h.textContent = "Map";
+    listEl.insertBefore(h, listEl.firstChild);
+  }
 
   // Stronger card contrast over dark satellite imagery
   function applySatClass(name) {
@@ -74,4 +83,21 @@ export function applyAttribution(map, sources) {
   (sources || []).forEach((s) => {
     if (s.attribution) map.attributionControl.addAttribution(s.attribution);
   });
+}
+
+// Frame the initial view on wherever the live data actually is, using the coverage bbox from
+// /api/meta. One metro fits tight; a state fits to the state; a national dataset is too wide to
+// fitBounds sensibly (Alaska + Hawaii stretch the extent and drag the centroid into the Pacific),
+// so for very wide coverage we keep the fixed national view instead. No coverage => keep default.
+export function fitToCoverage(map, coverage) {
+  if (!coverage || !Array.isArray(coverage.bbox)) return;
+  const [s, w, n, e] = coverage.bbox;
+  if (![s, w, n, e].every((x) => typeof x === "number" && isFinite(x))) return;
+  const lonSpan = Math.abs(e - w);
+  const latSpan = Math.abs(n - s);
+  if (lonSpan > 60 || latSpan > 25) {
+    map.setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
+    return;
+  }
+  map.fitBounds([[s, w], [n, e]], { padding: [30, 30], maxZoom: 13, animate: false });
 }
