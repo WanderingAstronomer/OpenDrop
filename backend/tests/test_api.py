@@ -3,6 +3,8 @@ vote raises confidence, denies -> pending (single & multi-source override),
 24h cooldown 429, missing-token 403 (dev mock), export excludes non-redistributable."""
 import uuid
 
+import pytest
+
 from conftest import requires_db
 
 TOK = "dev-mock-token"  # any non-empty token passes the CF test secret
@@ -46,6 +48,25 @@ def test_meta_shape(client):
     assert r.status_code == 200
     body = r.json()
     assert "sources" in body and "turnstile_sitekey" in body and "confidence_buckets" in body
+    assert "coverage" in body  # initial-view hint (may be null until data is seeded)
+
+
+@requires_db
+def test_meta_coverage_brackets_active_data(client, conn):
+    """coverage drives the map's opening view, so its bbox must actually contain the live data."""
+    lat, lon = 39.961, -82.991
+    conn.execute(
+        "INSERT INTO locations (geom, name, org_type, status) "
+        "VALUES (ST_SetSRID(ST_MakePoint(%s,%s),4326), %s, 'drop_bin', 'active')",
+        (lon, lat, f"cov-{uuid.uuid4()}"),
+    )
+    conn.commit()
+    cov = client.get("/api/meta").json()["coverage"]
+    assert cov is not None, "coverage must be present once an active location exists"
+    s, w, n, e = cov["bbox"]
+    assert s <= lat <= n and w <= lon <= e
+    cy, cx = cov["center"]
+    assert s <= cy <= n and w <= cx <= e
 
 
 @requires_db
@@ -118,6 +139,35 @@ def test_export_excludes_non_redistributable(client, conn):
 
 
 @requires_db
+def test_map_shows_active_non_redistributable_but_export_excludes_it(client, conn):
+    """Contract: the interactive map (/locations) is the INCLUSIVE community view — it filters on
+    status='active' AND confidence only, NOT is_redistributable. The bulk /export view is the
+    REDISTRIBUTABLE SUBSET (status='active' AND is_redistributable). So a community-validated pin
+    whose only source is enrich-only (goodwill -> not redistributable) is deliberately visible on
+    the map yet absent from export. This pins the asymmetry so neither path silently drifts: the
+    map must never start hiding such pins, and export must never start leaking them.
+
+    Isolated in an empty Montana bbox so the map query returns only this fixture's pin."""
+    lat, lon = 46.12, -110.12
+    loc = _mk_location(conn, "map-superset goodwill", lat=lat, lon=lon, sources=("goodwill",))
+    for i in range(6):  # crowd confirms push confidence to ~30 (>= floor 25) -> active
+        client.post(f"/api/locations/{loc}/vote", json={"vote": "confirm", "turnstile_token": TOK},
+                    headers={"X-Real-IP": f"192.0.2.{200 + i}"})
+    row = conn.execute("SELECT status, is_redistributable FROM locations WHERE id=%s", (loc,)).fetchone()
+    assert row["status"] == "active" and row["is_redistributable"] is False
+
+    # Map: present (the inclusive view shows it).
+    m = client.get("/api/locations", params={"bbox": "-110.2,46.0,-110.0,46.2",
+                                              "cluster": "off", "min_confidence": 0}).json()
+    map_ids = {f["properties"]["id"] for f in m["features"]}
+    assert loc in map_ids, "active community-validated pin must appear on the interactive map"
+
+    # Export: absent (the redistributable subset excludes it).
+    export_ids = {f["properties"]["id"] for f in client.get("/api/export").json()["features"]}
+    assert loc not in export_ids, "non-redistributable pin must never leak into the bulk export"
+
+
+@requires_db
 def test_submit_missing_token_403(client):
     r = client.post("/api/locations", json={"name": "X", "org_type": "drop_bin", "address": {"city": "Columbus"}})
     assert r.status_code == 403
@@ -137,7 +187,8 @@ def test_image_votes_promote_and_apply_pin_correction(conn, client):
     assert client.get(f"/api/locations/{loc}/images").json()["images"] == []
     assert len(client.get(f"/api/locations/{loc}/images?include_low=true").json()["images"]) == 1
     for i in range(3):
-        r = client.post(f"/api/images/{img}/vote", json={"vote": "helpful"}, headers={"X-Real-IP": f"10.20.0.{i}"})
+        r = client.post(f"/api/images/{img}/vote", json={"vote": "helpful", "turnstile_token": TOK},
+                        headers={"X-Real-IP": f"10.20.0.{i}"})
         assert r.status_code == 200
     row = conn.execute("SELECT score, status, applied FROM location_images WHERE id=%s", (img,)).fetchone()
     assert row["score"] == 3 and row["status"] == "visible" and row["applied"] is True
@@ -148,6 +199,25 @@ def test_image_votes_promote_and_apply_pin_correction(conn, client):
 
 
 @requires_db
+def test_image_vote_missing_token_403(conn, client):
+    """The image-vote endpoint auto-applies pin corrections, so it is bot-gated like the
+    location vote: a vote with no Turnstile token is rejected before any row is written."""
+    loc = _mk_location(conn, "img vote no token", lat=40.00, lon=-83.00)
+    img = conn.execute(
+        "INSERT INTO location_images (location_id, path, mime, submitter_ip_hash) "
+        "VALUES (%s,'y.jpg','image/jpeg','h') RETURNING id", (loc,)
+    ).fetchone()["id"]
+    conn.commit()
+    r = client.post(f"/api/images/{img}/vote", json={"vote": "helpful"})  # no token
+    assert r.status_code == 403
+    assert r.json()["error"]["code"] == "turnstile_failed"
+    # nothing was recorded
+    n = conn.execute("SELECT count(*) AS n FROM image_votes WHERE image_id=%s", (img,)).fetchone()["n"]
+    assert n == 0
+
+
+@requires_db
+@pytest.mark.owner_only  # closure detection is pipeline work (deletes source rows) — owner role
 def test_source_removal_retires_location(conn):
     """Closure detection: a location that loses its last ingest source must drop to
     confidence 0 / pending — guards the LEAST(85, NULL)=85 source-component bug."""
@@ -157,3 +227,10 @@ def test_source_removal_retires_location(conn):
     conn.commit()
     assert _confidence(conn, loc) == 0.0
     assert _status(conn, loc) == "pending"
+
+
+# --- reconciliation circuit breaker -----------------------------------------------------
+# Closure-detection coverage (exhaustive gate + single-run / cumulative breakers + the load-level
+# completeness gate) now lives in backend/tests/test_closure_detection.py, which exercises the
+# post-0011 three-layer design directly. It supersedes the three salvation_army-based tests that
+# used to live here (those predated the exhaustive gate and the cross-run audit ledger).

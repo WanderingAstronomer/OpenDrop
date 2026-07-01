@@ -3,9 +3,25 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>OpenDrop — US clothing donation map</title>
   <meta name="description" content="OpenDrop is a community-owned, open-data map of clothing donation locations across the United States — drop bins, thrift stores, mutual aid closets, and church drives." />
   <meta name="theme-color" content="#15616d" />
+  <script>
+    /* Resolve the theme BEFORE first paint (no flash). Explicit choice wins; otherwise
+       follow the OS. theme.js takes over for live OS-changes and the toggle. */
+    (function () {
+      try {
+        var t = localStorage.getItem("opendrop_theme");
+        if (t !== "light" && t !== "dark") {
+          t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+        }
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
   <meta property="og:title" content="OpenDrop — US clothing donation map" />
   <meta property="og:description" content="Find and verify clothing donation locations near you. Community-owned open data." />
   <meta property="og:type" content="website" />
@@ -31,8 +47,16 @@
       <div class="legend-row"><span class="dot high"></span> High confidence</div>
       <div class="legend-row"><span class="dot medium"></span> Medium</div>
       <div class="legend-row"><span class="dot low"></span> Low / unverified</div>
+      <div class="legend-links">
+        <a href="/privacy.html">Privacy</a> ·
+        <a href="/terms.html">Terms</a> ·
+        <a href="https://github.com/WanderingAstronomer/OpenDrop" target="_blank" rel="noopener">Source</a>
+      </div>
     </div>
-    <button id="list-toggle" class="list-toggle" type="button" aria-expanded="false" aria-controls="list-panel">☰ List</button>
+    <div class="ctl-row">
+      <button id="list-toggle" class="list-toggle" type="button" aria-expanded="false" aria-controls="list-panel">☰ List</button>
+      <button id="theme-toggle" class="icon-btn theme-toggle" type="button" aria-label="Switch theme" title="Switch theme">☾</button>
+    </div>
   </div>
 
   <aside id="list-panel" class="list-panel" aria-label="Locations in view" aria-hidden="true">

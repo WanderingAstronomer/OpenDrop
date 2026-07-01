@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Privacy — OpenDrop</title>
+  <meta name="description" content="How OpenDrop handles data: no accounts, salted IP hashes for abuse-prevention only, on-device GPS, EXIF-stripped photos, open data." />
+  <script src="/js/theme-boot.js"></script>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body class="legal-body">
+  <main class="legal">
+    <p class="legal-top"><a href="/">← Back to the map</a></p>
+    <h1>OpenDrop Privacy Notice</h1>
+    <p class="legal-meta">Last updated 29 June 2026</p>
+
+    <p>OpenDrop is a community-owned, open-data map of clothing-donation locations. It is built to
+      need as little personal data as possible. There are <strong>no user accounts</strong>, no
+      advertising, and no third-party analytics or tracking pixels.</p>
+
+    <h2>What we collect</h2>
+    <ul>
+      <li><strong>Location and photo contributions you submit.</strong> When you add a location,
+        suggest a correction, rate a spot, or upload a photo, we store that contribution and the
+        time it was made. This is community data and is published as open data (see below).</li>
+      <li><strong>A salted hash of your IP address.</strong> We do <em>not</em> store your IP
+        address. Each write is tagged with a one-way <code>SHA-256</code> hash of your IP combined
+        with a secret salt. We use it only to (a) rate-limit abuse, and (b) count one vote per
+        person per location. It is not reversible to your IP and is never shared.</li>
+      <li><strong>Anti-bot verification.</strong> Submissions are protected by Cloudflare Turnstile.
+        Turnstile’s own processing is governed by Cloudflare’s privacy policy.</li>
+      <li><strong>Standard server logs.</strong> Our web server records request metadata (path,
+        status, a random per-request id, timing) for reliability and security. These rotate and are
+        not used to build profiles.</li>
+    </ul>
+
+    <h2>What we deliberately do <em>not</em> collect</h2>
+    <ul>
+      <li><strong>Your precise location.</strong> The “I’m standing here” feature computes the
+        distance to a pin <em>entirely on your device</em>. Your GPS coordinates never leave your
+        browser — the server receives only a single yes/no flag indicating whether you were within
+        range. Coordinates are never sent, stored, correlated, or sold.</li>
+      <li><strong>Photo metadata.</strong> Every uploaded photo is re-encoded server-side, which
+        strips all EXIF metadata — including any embedded GPS coordinates and camera details —
+        before the image is stored.</li>
+      <li><strong>Names, emails, phone numbers, or payment details.</strong> We never ask for them
+        and there is nowhere to enter them.</li>
+    </ul>
+
+    <h2>How long we keep it &amp; how it’s purged</h2>
+    <p>Community contributions (locations, corrections, ratings, photos) are retained as long as the
+      map carries them, because they <em>are</em> the map. The salted IP hash attached to a
+      contribution is retained alongside it, because it is the key that prevents one person from
+      voting many times; on its own it is an irreversible hash, not an identifier.</p>
+    <p>Our primary privacy lever is <strong>salt rotation</strong>: rotating the secret
+      <code>IP_HASH_SALT</code> permanently severs every stored hash from any future IP, making the
+      historical hashes unlinkable to any person. Operators may also purge old rows from the
+      abuse-prevention queues (e.g. resolved reports) on a rolling basis. Photos removed by
+      moderators are unlinked from storage.</p>
+
+    <h2>Open data</h2>
+    <p>The location dataset is published under the Open Database License (ODbL), with attribution to
+      OpenStreetMap and other sources embedded in the export. Contributions you make become part of
+      this open dataset. Please do not submit anything you are not willing to publish openly.</p>
+
+    <h2>Your choices</h2>
+    <ul>
+      <li>You can use the map fully without contributing anything.</li>
+      <li>You can retract your own rating for a spot at any time from its details panel.</li>
+      <li>To request removal of a specific contribution or photo, use the <strong>Report</strong>
+        button on the item, or contact us below.</li>
+    </ul>
+
+    <h2>Source code</h2>
+    <p>OpenDrop is free software under the GNU Affero General Public License v3 (AGPL-3.0). In
+      keeping with §13 of that license, the complete corresponding source for this running service
+      is available at
+      <a href="https://github.com/WanderingAstronomer/OpenDrop" target="_blank" rel="noopener">github.com/WanderingAstronomer/OpenDrop</a>.</p>
+
+    <h2>Contact</h2>
+    <p>Questions or removal requests:
+      <a href="mailto:privacy@opendrop.example">privacy@opendrop.example</a>.</p>
+
+    <p class="legal-foot"><a href="/terms.html">Terms of Use</a> · <a href="/">Back to the map</a></p>
+  </main>
+</body>
+</html>

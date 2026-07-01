@@ -46,7 +46,10 @@ services:
     ports:
       - "${WEB_PORT:-8080}:80"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- http://localhost/ >/dev/null 2>&1 || exit 1"]
+      # 127.0.0.1, not localhost: busybox wget resolves localhost to ::1 first, but nginx only
+      # listens on IPv4 (listen 80) — so the healthcheck failed (container shown "unhealthy")
+      # while the server was actually fine. Pin to IPv4 to match where nginx listens.
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1/ >/dev/null 2>&1 || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5

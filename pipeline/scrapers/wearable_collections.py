@@ -6,9 +6,8 @@ from __future__ import annotations
 
 import logging
 
-import httpx
-
 from .base import BaseScraper, NormalizedRecord, load
+from .http import NOMINATIM_MIN_DELAY_S, PoliteClient
 
 log = logging.getLogger("opendrop.wearable_collections")
 
@@ -49,10 +48,14 @@ class WearableCollectionsScraper(BaseScraper):
         if not _overlaps(region.bbox, NYC_BBOX):
             log.info("wearable_collections: region does not overlap NYC; skipping")
             return
-        with httpx.Client(timeout=20, headers={"User-Agent": "OpenDrop/0.1 (civic open-data)"}) as client:
+        # Nominatim's usage policy caps geocoding at 1 req/s — pin the client there regardless of
+        # the global scraper delay so a national run can never violate it.
+        with PoliteClient(timeout=20, delay_s=NOMINATIM_MIN_DELAY_S,
+                          headers={"User-Agent": "OpenDrop/0.1 (civic open-data)"}) as client:
             for name, query in SITES:
                 coords = _geocode(client, query)
                 if not coords:
+                    self.fetch_failures += 1  # a site we couldn't place -> incomplete `seen`
                     continue
                 lat, lon = coords
                 if not region.contains(lat, lon, margin=0.1):

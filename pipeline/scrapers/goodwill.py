@@ -15,9 +15,8 @@ from __future__ import annotations
 import logging
 import re
 
-import httpx
-
 from .base import BaseScraper, NormalizedRecord, load
+from .http import PoliteClient
 
 log = logging.getLogger("opendrop.goodwill")
 
@@ -30,7 +29,7 @@ class GoodwillScraper(BaseScraper):
     code = "goodwill"
 
     def fetch(self, region):
-        with httpx.Client(timeout=30, headers={"User-Agent": "Mozilla/5.0 (OpenDrop civic open-data)"}) as client:
+        with PoliteClient(timeout=30, headers={"User-Agent": "Mozilla/5.0 (OpenDrop civic open-data)"}) as client:
             nonce = self._nonce(client)
             if not nonce:
                 log.warning("goodwill: could not harvest nonce; no records")
@@ -46,9 +45,17 @@ class GoodwillScraper(BaseScraper):
             except Exception as e:  # noqa: BLE001
                 log.warning("goodwill ajax failed: %s", e)
                 return
-            data = (body.get("data") or {}).get("data") or body.get("data") or []
-            if isinstance(data, dict):
-                data = data.get("data") or []
+            # Goodwill's AJAX wraps the rows differently across deployments: sometimes
+            # body["data"]["data"] (nested), sometimes a flat body["data"] list. Unwrap both
+            # without assuming a shape — calling .get() on a non-empty flat list used to raise
+            # AttributeError straight out of fetch() (the unwrap sits outside the try/except).
+            raw = body.get("data")
+            if isinstance(raw, dict):
+                data = raw.get("data") or []
+            elif isinstance(raw, list):
+                data = raw
+            else:
+                data = []
             for loc in data:
                 if not isinstance(loc, dict):
                     continue
@@ -74,7 +81,7 @@ class GoodwillScraper(BaseScraper):
                 )
 
     @staticmethod
-    def _nonce(client: httpx.Client) -> str | None:
+    def _nonce(client: PoliteClient) -> str | None:
         try:
             html = client.get(LOCATOR).text
         except Exception as e:  # noqa: BLE001

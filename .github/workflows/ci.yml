@@ -21,21 +21,71 @@ jobs:
           --health-cmd "pg_isready -U opendrop -d opendrop"
           --health-interval 5s --health-timeout 5s --health-retries 20
     env:
+      # Owner role: used by migrate.sh (DDL) and as the default test connection.
       DATABASE_URL: postgresql://opendrop:opendrop@localhost:5432/opendrop
+      # The test-isolation fixture (backend/tests/conftest.py) TRUNCATEs between tests as the schema
+      # owner — the restricted-role pass below runs the tests as opendrop_app (no TRUNCATE grant), so
+      # the reset must use this owner URL, not the test's DATABASE_URL.
+      TEST_DB_OWNER_URL: postgresql://opendrop:opendrop@localhost:5432/opendrop
+      # This CI `db` service is an ephemeral, throwaway container. The fixture's hard rail otherwise
+      # refuses to truncate any DB not named *_test (a guard against wiping the live `opendrop` DB);
+      # this explicit opt-in says "this `opendrop` is disposable — truncation is safe here".
+      OPENDROP_ALLOW_DB_TRUNCATE: "1"
     steps:
       - uses: actions/checkout@v4
+
+      # Frontend ships with no build step; run its node:test unit suite as a BLOCKING gate alongside
+      # pytest. (The gps_corroborated #4 bug that shipped undetected was a frontend JS bug with zero
+      # test coverage — this closes that hole.) Placed first so a JS regression fails fast and cheap.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Frontend unit tests (node:test)
+        run: cd frontend && node --test
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+        run: |
+          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+          sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Lint (ruff)
         run: ruff check backend/app pipeline
-      - name: Apply schema
+
+      # Apply the schema through the REAL migration runner (not a raw loop), so CI exercises the
+      # exact path prod uses. Run it TWICE: the second pass must be a clean no-op, proving the
+      # schema_migrations ledger + self-recording inserts are idempotent (the deploy guarantee).
+      - name: Migrate (first pass — applies)
+        run: bash scripts/migrate.sh
+      - name: Migrate (second pass — must be a no-op)
         run: |
-          sudo apt-get update && sudo apt-get install -y postgresql-client
-          for f in migrations/*.sql; do
-            echo "applying $f"; psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
-          done
-      - name: Run tests
-        run: pytest
+          out="$(bash scripts/migrate.sh)"
+          echo "$out"
+          if echo "$out" | grep -q '^apply '; then
+            echo "::error::migrate.sh re-applied a migration on the second pass (not idempotent)"; exit 1
+          fi
+
+      - name: Run tests (owner role) + coverage gate
+        # BLOCKING ratchet floor (locked decision): coverage may rise, never fall — a drop fails CI.
+        # Current measured total across tests/ + backend/tests/ is ~79.6% (app + pipeline); the gate
+        # is pinned just under it and is tightened UPWARD as coverage grows (target >=85% on core
+        # logic). --cov-fail-under compares the precise (un-rounded) percentage, so 79 is the honest
+        # non-flaky floor today. Coverage is measured on this owner pass (it runs the full suite).
+        run: pytest --cov=app --cov=pipeline --cov-report=term-missing --cov-fail-under=79
+
+      # Run the API-surface tests again as the least-privilege application role the API uses in
+      # production (deploy/app_role.sql). This catches any "permission denied" that only shows up
+      # when the API is NOT the schema owner — the documented prod configuration. owner_only tests
+      # (pipeline/seeder/reconcile + a couple of owner-level DELETE self-cleans) are excluded: that
+      # work runs as the owner role in prod and is already covered by the owner pass above.
+      - name: Create restricted app role
+        run: |
+          APP_PW="ci_app_pw_$(date +%s)"
+          echo "APP_PW=$APP_PW" >> "$GITHUB_ENV"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v app_pw="$APP_PW" -f deploy/app_role.sql
+      - name: Run tests (restricted app role)
+        env:
+          DATABASE_URL: postgresql://opendrop_app:${{ env.APP_PW }}@localhost:5432/opendrop
+        run: pytest -q -m "not owner_only"

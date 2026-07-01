@@ -43,3 +43,9 @@ Thumbs.db
 # --- Build / temp ---
 tmp/
 .tmp/
+
+# --- Test artifacts ---
+.coverage
+
+# --- Local DB/media backups (live data — never publish) ---
+backups/
