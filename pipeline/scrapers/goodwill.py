@@ -45,9 +45,17 @@ class GoodwillScraper(BaseScraper):
             except Exception as e:  # noqa: BLE001
                 log.warning("goodwill ajax failed: %s", e)
                 return
-            data = (body.get("data") or {}).get("data") or body.get("data") or []
-            if isinstance(data, dict):
-                data = data.get("data") or []
+            # Goodwill's AJAX wraps the rows differently across deployments: sometimes
+            # body["data"]["data"] (nested), sometimes a flat body["data"] list. Unwrap both
+            # without assuming a shape — calling .get() on a non-empty flat list used to raise
+            # AttributeError straight out of fetch() (the unwrap sits outside the try/except).
+            raw = body.get("data")
+            if isinstance(raw, dict):
+                data = raw.get("data") or []
+            elif isinstance(raw, list):
+                data = raw
+            else:
+                data = []
             for loc in data:
                 if not isinstance(loc, dict):
                     continue

@@ -22,7 +22,10 @@ import { guard } from "./turnstile.js";
 
 const EARTH_M = 6371000;
 
-function haversine(aLat, aLon, bLat, bLon) {
+// haversine / gpsWithin / tierBlurb / confirmGpsCorroborated are exported so the JS unit suite
+// (frontend/test/) can exercise the pure distance math and the privacy-critical GPS-gating logic
+// directly — the gps_corroborated confirm-tap bug that shipped undetected lived in the last of these.
+export function haversine(aLat, aLon, bLat, bLon) {
   const toRad = (d) => (d * Math.PI) / 180;
   const dLat = toRad(bLat - aLat);
   const dLon = toRad(bLon - aLon);
@@ -33,7 +36,7 @@ function haversine(aLat, aLon, bLat, bLon) {
 
 // Resolve to TRUE only if the device is within `radius` m of the target (the dragged pin).
 // The coordinates are read and compared entirely on-device; the caller only ever sees a boolean.
-function gpsWithin(targetLat, targetLon, radius) {
+export function gpsWithin(targetLat, targetLon, radius) {
   return new Promise((resolve) => {
     if (!navigator.geolocation) { resolve(false); return; }
     navigator.geolocation.getCurrentPosition(
@@ -44,7 +47,7 @@ function gpsWithin(targetLat, targetLon, radius) {
   });
 }
 
-function tierBlurb(tier, req) {
+export function tierBlurb(tier, req) {
   if (tier === "cold") return "This spot is new to the map — your fix applies right away. Thank you!";
   if (tier === "hot") return `This is a busy, well-known spot — it takes ${req} confirmations to move the pin.`;
   return `Needs ${req} confirmation${req === 1 ? "" : "s"} before the pin moves — or just yours, if you're standing here.`;
@@ -172,8 +175,27 @@ export function startCorrection(d) {
   };
 }
 
+// A CONFIRM vote can carry the same on-site GPS boost the server already weights for confirmers
+// (1 + gps_corroborated). We corroborate ONLY when geolocation is already granted — a quick
+// "Looks right" tap must never trigger a permission prompt — and against the SUGGESTED point the
+// voter is endorsing. As everywhere, the device computes the distance and we send only the boolean.
+export async function confirmGpsCorroborated(suggestedLat, suggestedLon) {
+  if (suggestedLat == null || suggestedLon == null || Number.isNaN(suggestedLat) || Number.isNaN(suggestedLon)) {
+    return false;
+  }
+  try {
+    if (!navigator.permissions) return false;
+    const st = await navigator.permissions.query({ name: "geolocation" });
+    if (st.state !== "granted") return false;  // never prompt on a confirm tap; quietly no boost
+  } catch (e) {
+    return false;
+  }
+  return gpsWithin(suggestedLat, suggestedLon, gpsRadiusM());
+}
+
 // Confirm or reject an existing open correction (used by the popover's pending-fix list).
-export async function submitCorrectionVote({ corrId, confirm, host, btn }) {
+export async function submitCorrectionVote({ corrId, confirm, suggestedLat, suggestedLon, host, btn }) {
+  const gps = confirm ? await confirmGpsCorroborated(suggestedLat, suggestedLon) : false;
   return guard(host, btn, { action: "confirm_correction" }, (token) =>
-    voteCorrection(corrId, { confirm, gps_corroborated: false, turnstile_token: token }));
+    voteCorrection(corrId, { confirm, gps_corroborated: gps, turnstile_token: token }));
 }

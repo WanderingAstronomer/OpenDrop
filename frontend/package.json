@@ -1,0 +1,10 @@
+{
+  "name": "opendrop-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenDrop map frontend — vanilla ES-module JS, no build step. This package.json exists only to mark frontend/**/*.js as ESM (\"type\": \"module\") and to run the node:test unit suite under frontend/test/.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}
