@@ -12,7 +12,8 @@ _LOC_COLS = ["name", "org_type", "org_name", "brand_key", "address_line", "house
 
 def get_source(conn, code):
     return conn.execute(
-        "SELECT code, storage_policy, authority_weight FROM sources WHERE code = %s", (code,)
+        "SELECT code, storage_policy, authority_weight, fetch_is_exhaustive FROM sources WHERE code = %s",
+        (code,),
     ).fetchone()
 
 
@@ -64,15 +65,37 @@ def refresh_location_fields(conn, loc_id):
     highest-authority INGEST source (then most recent). Lower/enrich sources never win.
     Coalesce so a top source missing a field keeps the existing value."""
     row = conn.execute(
-        """SELECT ls.payload FROM location_sources ls
+        """SELECT ls.payload, ST_X(ls.source_geom) AS lon, ST_Y(ls.source_geom) AS lat
+           FROM location_sources ls
            JOIN sources s ON s.code = ls.source_code AND s.storage_policy = 'ingest'
            WHERE ls.location_id = %s
            ORDER BY s.authority_weight DESC, ls.last_seen_at DESC LIMIT 1""",
         (loc_id,),
     ).fetchone()
-    if not row or not row["payload"]:
+    if not row:
         return
+
+    # Canonical pin tracks the authoritative source's coordinate — but ONLY while no human/consensus
+    # has adjusted it. A community correction or operator override moves geom away from the immutable
+    # origin_geom anchor (neither path touches origin_geom), so geom = origin_geom means "untouched
+    # by humans" and we may follow the source, re-centering the anchor so the 2 km correction cap
+    # follows the source's live position. The instant geom diverges from origin_geom, a human owns
+    # the pin and ingest never clobbers it. (Pre-fix this column was frozen at insert-time coords.)
+    if row["lon"] is not None and row["lat"] is not None:
+        conn.execute(
+            """UPDATE locations
+                  SET geom = ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326),
+                      origin_geom = ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326),
+                      updated_at = now()
+                WHERE id = %(id)s
+                  AND geom IS NOT DISTINCT FROM origin_geom
+                  AND geom IS DISTINCT FROM ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)""",
+            {"lon": row["lon"], "lat": row["lat"], "id": loc_id},
+        )
+
     p = row["payload"]
+    if not p:
+        return
     conn.execute(
         """UPDATE locations SET
               name          = COALESCE(%s, name),

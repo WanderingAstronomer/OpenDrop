@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # The migration this image's code expects to be present. At boot the API checks schema_migrations
     # for this row: in prod it REFUSES to start if missing (blocks 'new code vs old schema' drift);
     # in dev it only warns. Bump this whenever a new migration is required by the code.
-    expected_schema_version: str = "0010_moderation_audit_and_thresholds.sql"
+    expected_schema_version: str = "0011_closure_safety_exhaustive_and_erosion.sql"
     # Extra comma-separated words rejected in submissions, MERGED with the baked-in default
     # denylist (moderation._DEFAULT_DENYLIST). Operators extend, they don't replace.
     content_denylist: str = ""

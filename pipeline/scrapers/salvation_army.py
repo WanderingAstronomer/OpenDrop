@@ -32,6 +32,7 @@ class SalvationArmyScraper(BaseScraper):
                     r.raise_for_status()
                     payload = r.json()
                 except Exception as e:  # noqa: BLE001
+                    self.fetch_failures += 1  # swallowed ZIP call -> `seen` incomplete -> no reconcile
                     log.warning("satruck %s failed: %s", zip_code, e)
                     continue
                 locs = (payload.get("RetVal") or {}).get("Locations") or []
@@ -43,14 +44,21 @@ class SalvationArmyScraper(BaseScraper):
                     lat, lon = loc.get("Latitude"), loc.get("Longitude")
                     if lat is None or lon is None:
                         continue
+                    lat, lon = float(lat), float(lon)
+                    # A ZIP near a region edge returns locations that physically belong to the
+                    # neighbouring region; keep only those inside this region (small margin for
+                    # border ZIPs), matching the USAgain/Wearable sibling scrapers. Without this an
+                    # out-of-region store would be loaded against the wrong region's run.
+                    if not region.contains(lat, lon, margin=0.05):
+                        continue
                     addr = " ".join(x for x in (loc.get("Address1"), loc.get("Address2")) if x) or None
                     yield NormalizedRecord(
                         source_ref=guid,
                         name=loc.get("Name") or "The Salvation Army",
                         org_type=_org_type(loc.get("TypeName")),
                         org_name="The Salvation Army",
-                        lat=float(lat),
-                        lon=float(lon),
+                        lat=lat,
+                        lon=lon,
                         address_line=addr,
                         city=loc.get("City"),
                         state=(loc.get("State") or None),

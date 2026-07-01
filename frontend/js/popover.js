@@ -70,7 +70,7 @@ function mountCorrections(host, d, latlng) {
     <div class="po-fixes-t">📍 Pin move suggested</div>
     ${open.map((c) => {
       const left = Math.max(0, c.required_support - c.support);
-      return `<div class="po-fix" data-cid="${c.id}">
+      return `<div class="po-fix" data-cid="${c.id}" data-slat="${c.suggested_lat}" data-slon="${c.suggested_lon}">
         ${c.note ? `<div class="fix-note">“${esc(c.note)}”</div>` : ""}
         <div class="fix-meter">${left > 0 ? `needs ${left} more` : "ready"} · ${c.support}/${c.required_support}</div>
         <div class="ts fix-ts"></div>
@@ -87,7 +87,11 @@ function mountCorrections(host, d, latlng) {
     const tsHost = row.querySelector(".fix-ts");
     const onVote = async (confirm, btn) => {
       try {
-        const res = await submitCorrectionVote({ corrId: cid, confirm, host: tsHost, btn });
+        const res = await submitCorrectionVote({
+          corrId: cid, confirm,
+          suggestedLat: Number(row.dataset.slat), suggestedLon: Number(row.dataset.slon),
+          host: tsHost, btn,
+        });
         if (res.applied) {
           toast("Pin updated — thank you!", "success");
           app.refresh();

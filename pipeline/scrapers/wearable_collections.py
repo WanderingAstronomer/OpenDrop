@@ -55,6 +55,7 @@ class WearableCollectionsScraper(BaseScraper):
             for name, query in SITES:
                 coords = _geocode(client, query)
                 if not coords:
+                    self.fetch_failures += 1  # a site we couldn't place -> incomplete `seen`
                     continue
                 lat, lon = coords
                 if not region.contains(lat, lon, margin=0.1):

@@ -177,6 +177,25 @@ def test_warm_gps_submitter_applies_alone(conn, client):
 
 
 @requires_db
+def test_hot_gps_confirmer_counts_double(conn, client):
+    """A confirmer physically at the suggested point (gps_corroborated) carries weight 2 — the same
+    on-site boost the submitter gets — so TWO GPS confirmers clear a Hot correction that would
+    otherwise need THREE plain ones (cf. test_hot_tier_requires_strong_support). This guards the
+    frontend confirm-vote path, which must actually send gps_corroborated=true when on-site rather
+    than hard-coding false. Server weighting: v_support = (1 + submitter_gps) + SUM(1 + voter_gps)."""
+    loc = _mk_location(conn, "hot gps confirmer bin")
+    _seed_engagement(client, loc, 15, start=60)  # 15 distinct ips => Hot, required_support 4
+    cid = _propose(client, loc, 41.5011, -81.70, "198.51.60.250").json()["correction_id"]
+
+    b1 = _confirm(client, cid, "198.51.60.101", gps=True).json()  # +2 => support 1 + 2 = 3 (< 4)
+    assert b1["applied"] is False and b1["support"] == 3  # crisp proof the GPS confirmer weighed 2
+
+    b2 = _confirm(client, cid, "198.51.60.102", gps=True).json()  # +2 => 5 >= 4 -> applies
+    assert b2["applied"] is True and b2["support"] >= 4
+    assert _geom(conn, loc) == (41.5011, -81.70)  # pin moved, on only two confirmers
+
+
+@requires_db
 def test_submitter_cannot_confirm_own_correction(conn, client):
     loc = _mk_location(conn, "selfvote bin")
     _seed_engagement(client, loc, 2, start=13)

@@ -160,6 +160,9 @@ class OsmScraper(BaseScraper):
             for i, tb in enumerate(tiles, 1):
                 data = self._overpass(client, url, tb)
                 if data is None:
+                    # A dead tile means `seen` is missing that tile's nodes; reconciling against an
+                    # incomplete sweep would falsely retire live bins in the failed tile. Flag it.
+                    self.fetch_failures += 1
                     continue
                 any_ok = True
                 got = data.get("elements", [])

@@ -58,6 +58,7 @@ class UsAgainScraper(BaseScraper):
                 try:
                     html = client.get(URL, params={"zip": zip_code}).text
                 except Exception as e:  # noqa: BLE001
+                    self.fetch_failures += 1  # swallowed ZIP call -> `seen` incomplete -> no reconcile
                     log.warning("usagain %s failed: %s", zip_code, e)
                     continue
                 for rec in _parse(html):
