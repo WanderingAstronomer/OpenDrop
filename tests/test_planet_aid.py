@@ -14,6 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from pipeline.common import haversine_m  # noqa: E402
 from pipeline.regions import Region  # noqa: E402
 from pipeline.scrapers import planet_aid  # noqa: E402
 
@@ -362,6 +363,334 @@ if HAVE_HYPOTHESIS:
         assert set(refs) <= input_ids
         # Invariant 4: a clean run (no swallowed failures) leaves fetch_failures at 0.
         assert planet_aid.PlanetAidScraper().fetch_failures == 0
+
+
+# =================================================================================================
+# Adaptive quadtree subdivision — a faithful nearest-N fake + the tests that prove completeness,
+# termination, the fetch_failures contract, and backward-compat. The OLD _FakeClient tests above are
+# left UNEDITED and passing: every one of them feeds < N_CAP sites, so the len(data) < N_CAP branch
+# fires and NO cell ever subdivides — that is itself the machine-checked backward-compat proof.
+# =================================================================================================
+
+class _NearestNClient:
+    """Context-manager HTTP client that faithfully simulates a nearest-N locator API over a FIXED
+    universe of sites: each get() returns the `cap` sites nearest the queried (lat,lon), ranked by
+    the SAME haversine_m the scraper uses (ties broken by id for determinism). This is what makes
+    subdivision observable — a coarse cell over a dense cluster receives only the nearest `cap`, and
+    only re-querying sub-cells recovers the rest. Records .calls and .centers; raise_on(lat,lon)->
+    exc|None injects a per-cell failure. Pinning distance to haversine_m guarantees a test can never
+    assert a completeness the scraper's own geometry cannot deliver."""
+
+    def __init__(self, universe, cap=None, raise_on=None):
+        self._universe = list(universe)
+        self._cap = planet_aid.N_CAP if cap is None else cap
+        self._raise_on = raise_on
+        self.calls = 0
+        self.centers = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def get(self, url, params=None):
+        lat, lon = params["latitude"], params["longitude"]
+        self.calls += 1
+        self.centers.append((round(lat, 6), round(lon, 6)))
+        if self._raise_on is not None:
+            exc = self._raise_on(lat, lon)
+            if exc is not None:
+                raise exc
+
+        def _key(site):
+            gp = site.get("geoPoint") or {}
+            return (haversine_m(lat, lon, gp["latitude"], gp["longitude"]), str(site.get("id") or ""))
+
+        return _FakeResp(sorted(self._universe, key=_key)[: self._cap])
+
+
+def _run_fetch(region, client, scraper=None):
+    """Run PlanetAidScraper().fetch(region) with `client` patched in. Hypothesis-driven tests can't
+    take the monkeypatch fixture, so patch/restore PoliteClient by hand. Returns (records, scraper)."""
+    scraper = scraper or planet_aid.PlanetAidScraper()
+    original = planet_aid.PoliteClient
+    planet_aid.PoliteClient = lambda *a, **k: client
+    try:
+        return list(scraper.fetch(region)), scraper
+    finally:
+        planet_aid.PoliteClient = original
+
+
+def _seed_count(region):
+    """The number of top-level cells the sweep seeds for a region — the baseline (no-subdivision)
+    call count, identical to the old flat grid's cell count."""
+    return len(list(planet_aid._seed_cells(region.bbox)))
+
+
+def _lattice(rows, cols, clat, clon, dlat, dlon, prefix="g"):
+    """A regular rows x cols lattice of sites centered on (clat, clon)."""
+    return [
+        _site(f"{prefix}{i}-{j}", round(clat + (i - (rows - 1) / 2) * dlat, 6),
+              round(clon + (j - (cols - 1) / 2) * dlon, 6))
+        for i in range(rows) for j in range(cols)
+    ]
+
+
+def _colocated(n, clat=40.0, clon=-83.0, prefix="c"):
+    """n sites within ~a few meters of one point (id-jittered by 1 microdegree ~ 0.1 m each) — the
+    'mall' degenerate where d_max stays ~0 at every scale."""
+    return [_site(f"{prefix}{k}", round(clat + k * 1e-6, 6), round(clon, 6)) for k in range(n)]
+
+
+_BOUND = _seed_count(_compact_region()) * (4 ** (planet_aid.MAX_DEPTH + 1) - 1) // 3  # max cells, depth<=MAX_DEPTH
+
+
+# --- completeness in dense areas (the core regression) -------------------------------------------
+
+def test_dense_cluster_recovered():
+    # 64 bins packed inside the single seed cell of _compact_region: one center query returns only
+    # the nearest 20, so the OLD flat grid yielded 20. The quadtree must subdivide and recover ALL 64.
+    universe = _lattice(8, 8, 40.0, -83.0, 0.008, 0.008)
+    client = _NearestNClient(universe)
+    recs, _ = _run_fetch(_compact_region(), client)
+    assert {r.source_ref for r in recs} == {s["id"] for s in universe}   # all 64 recovered
+    assert client.calls > 1                                              # it really did subdivide
+
+
+def test_sparse_no_subdivision():
+    # 5 bins spread across a 16-cell region: every cell returns < N_CAP, so no cell splits and the
+    # call count is exactly the baseline seed-cell count — sparse coverage stays as cheap as today.
+    region = _multi_cell_region()
+    universe = [_site("s1", 39.90, -83.10), _site("s2", 40.00, -83.00), _site("s3", 40.10, -82.90),
+                _site("s4", 39.95, -82.95), _site("s5", 40.05, -83.05)]
+    client = _NearestNClient(universe)
+    recs, _ = _run_fetch(region, client)
+    assert {r.source_ref for r in recs} == {s["id"] for s in universe}
+    assert client.calls == _seed_count(region)
+
+
+def test_at_cap_but_covered_no_subdivide():
+    # A full-cap (20-site) cell whose sites are spread WIDER than the cell, so d_max already reaches
+    # past the corner (d_max >= SAFETY*corner_m): the covering disk contains the whole cell, so the
+    # AND-criterion must NOT over-subdivide despite len(data) == N_CAP.
+    universe = _lattice(4, 5, 40.0, -83.0, 0.16 / 3, 0.16 / 4)   # 20 sites spanning ~0.16 deg
+    client = _NearestNClient(universe)
+    recs, _ = _run_fetch(_compact_region(), client)
+    assert {r.source_ref for r in recs} == {s["id"] for s in universe}
+    assert client.calls == _seed_count(_compact_region())       # exactly baseline: no extra queries
+
+
+def test_out_of_region_used_for_dmax_but_dropped():
+    # 19 bins clustered at the region center + 1 far bin OUTSIDE the region. All 20 are returned (the
+    # cap), so the far bin sets a large d_max that marks the cell complete (no subdivision), yet the
+    # far bin is dropped from output. If out-of-region sites were NOT counted for d_max, the tight
+    # cluster's small d_max would force a spurious subdivision -> client.calls > 1.
+    cluster = [_site(f"n{k}", round(40.0 + (k % 5) * 1e-4, 6), round(-83.0 + (k // 5) * 1e-4, 6))
+               for k in range(19)]
+    far = _site("far", 40.30, -83.0)                            # ~31 km north, well past the +0.05 margin
+    client = _NearestNClient(cluster + [far])
+    recs, _ = _run_fetch(_compact_region(), client)
+    refs = {r.source_ref for r in recs}
+    assert "far" not in refs                                    # out-of-region -> dropped from output
+    assert refs == {s["id"] for s in cluster}                  # the 19 in-region bins yielded
+    assert client.calls == _seed_count(_compact_region())      # far bin's distance marked the cell complete
+
+
+def test_cushion_pins_corner_recovery():
+    # The SAFETY cushion must be a REAL margin above bare corner coverage, not ~1.0. Build a full-cap
+    # seed cell whose 20 in-region bins put d_max ~5% INSIDE the band [corner_m, SAFETY*corner_m),
+    # plus one extra in-region bin sitting diagonally BEYOND that d_max. Only the cushion forces the
+    # subdivision that recovers the diagonal bin; at SAFETY ~ 1.0 (bare corner) the cell is declared
+    # complete and the bin is silently dropped. This test therefore FAILS if the 1.10 cushion is
+    # weakened toward 1.0 — pinning the deliberate margin that recovers real corner/diagonal bins.
+    region = _compact_region()
+    clat, clon, h0, _ = list(planet_aid._seed_cells(region.bbox))[0]   # exactly one seed cell
+    corner = planet_aid._corner_m(clat, clon, h0)
+    r1 = corner * 1.05                                                 # ring ~5% into the cushion band
+    ring = [_site(f"r{k}", round(clat - r1 / 111320.0 + (k - 10) * 2e-4, 6),
+                  round(clon + (k - 10) * 2e-4, 6)) for k in range(planet_aid.N_CAP)]
+    hidden = _site("hidden", 40.08, -82.90)                            # in-region, diagonal, beyond d_max
+    assert region.contains(40.08, -82.90, margin=0.05)
+    client = _NearestNClient(ring + [hidden])
+    recs, _ = _run_fetch(region, client)
+    ids = {r.source_ref for r in recs}
+    assert ids == {s["id"] for s in ring} | {"hidden"}                # all 21 in-region bins recovered...
+    assert client.calls > 1                                           # ...because the cushion forced a split
+
+
+def test_dense_cluster_across_seed_cell_seam():
+    # Completeness ACROSS a seed-cell boundary (the single-seed oracle can't reach this): a dense
+    # cluster straddling the seam between two adjacent seed cells must be recovered in full.
+    region = _multi_cell_region()
+    cells = list(planet_aid._seed_cells(region.bbox))
+    assert len(cells) > 1
+    (a_lat, a_lon, _, _), (_, b_lon, _, _) = cells[0], cells[1]
+    universe = _lattice(8, 8, a_lat, (a_lon + b_lon) / 2.0, 0.006, 0.006)   # 64 bins across the seam
+    oracle = {s["id"] for s in universe
+              if region.contains(s["geoPoint"]["latitude"], s["geoPoint"]["longitude"], margin=0.05)}
+    client = _NearestNClient(universe)
+    recs, _ = _run_fetch(region, client)
+    assert {r.source_ref for r in recs} == oracle                     # every in-region seam bin recovered
+    assert len(oracle) >= planet_aid.N_CAP                            # the cluster really exceeded one cap
+
+
+# --- termination + the co-located degenerate -----------------------------------------------------
+
+def test_colocated_cluster_terminates():
+    # 40 bins within ~4 m of one point => d_max ~ 0 at every scale => saturated forever. The size/
+    # depth floor must stop the recursion; the API's nearest-20 there are the accepted residual.
+    client = _NearestNClient(_colocated(40))
+    recs, _ = _run_fetch(_compact_region(), client)
+    assert client.calls > 1                                     # it subdivided (toward the floor)...
+    assert client.calls <= _BOUND                               # ...but a bounded number of times
+    assert len({r.source_ref for r in recs}) >= planet_aid.N_CAP  # at least the nearest-20 kept
+
+
+def test_query_budget_valve(monkeypatch):
+    # A tiny per-region budget over a saturating universe: the loop stops subdividing at the budget,
+    # drains no further, and still returns (graceful degrade).
+    monkeypatch.setenv("PLANET_AID_MAX_QUERIES", "5")
+    client = _NearestNClient(_colocated(40))
+    recs, _ = _run_fetch(_compact_region(), client)
+    assert client.calls <= 5
+    assert len(recs) > 0                                        # returned records, did not hang
+
+
+def test_max_queries_env_override_and_fallback(monkeypatch):
+    # The per-region budget is env-tunable; a malformed value falls back to the default (never raises).
+    monkeypatch.setenv("PLANET_AID_MAX_QUERIES", "42")
+    assert planet_aid._max_queries() == 42
+    monkeypatch.setenv("PLANET_AID_MAX_QUERIES", "not-an-int")
+    assert planet_aid._max_queries() == planet_aid._DEFAULT_MAX_QUERIES
+    monkeypatch.delenv("PLANET_AID_MAX_QUERIES", raising=False)
+    assert planet_aid._max_queries() == planet_aid._DEFAULT_MAX_QUERIES
+
+
+# --- fetch_failures contract under subdivision ---------------------------------------------------
+
+def test_failure_mid_subdivision_bumps_once_and_is_not_subdivided():
+    # A dense cluster forces the seed cell to split into 4 children; exactly ONE child's query fails.
+    # The failure bumps fetch_failures by exactly 1 (never 4x), the failed cell is NOT subdivided,
+    # and the other children still yield their bins.
+    failed = (39.9825, -83.0175)                               # one of the seed cell's 4 quadrant centers
+
+    def _raise_at(lat, lon):
+        if abs(lat - failed[0]) < 1e-6 and abs(lon - failed[1]) < 1e-6:
+            return RuntimeError("cell down")
+        return None
+
+    client = _NearestNClient(_lattice(5, 5, 40.0, -83.0, 0.004, 0.004), raise_on=_raise_at)
+    recs, scraper = _run_fetch(_compact_region(), client)
+    assert scraper.fetch_failures == 1                          # exactly one swallowed failure
+    assert client.centers.count(failed) == 1                   # the failed cell was queried once...
+    grandchildren = {(round(failed[0] + a, 6), round(failed[1] + b, 6))
+                     for a in (-0.01625, 0.01625) for b in (-0.01625, 0.01625)}
+    assert grandchildren.isdisjoint(client.centers)            # ...and never subdivided (no grandchildren)
+    assert len(recs) > 0                                        # sibling cells still produced records
+
+
+def test_floor_does_not_bump_fetch_failures():
+    # Hitting the size/depth floor on a dense cluster is a fetch SUCCESS (the API answered), so it
+    # must NOT bump fetch_failures — a clean dense run still ends at 0 (property Invariant 4).
+    client = _NearestNClient(_colocated(40))
+    _, scraper = _run_fetch(_compact_region(), client)
+    assert scraper.fetch_failures == 0
+
+
+def test_non_numeric_coord_skipped(monkeypatch):
+    # A present-but-non-numeric geoPoint coord (dirty upstream row) must be SKIPPED like a missing
+    # geoPoint — not crash out of fetch() and abort the whole region's load. It is a data-quality
+    # skip, so it does NOT bump fetch_failures (a fetch failure is a swallowed request, not a bad row).
+    good = _site("ok", 40.0, -83.0)
+    bad_lat = _site("bad-lat", 40.0, -83.0)
+    bad_lat["geoPoint"]["latitude"] = "N/A"          # non-numeric string -> float() would raise
+    bad_lon = _site("bad-lon", 40.0, -83.0)
+    bad_lon["geoPoint"]["longitude"] = {}            # wrong type -> float() would raise
+    monkeypatch.setattr(planet_aid, "PoliteClient", lambda *a, **k: _FakeClient([good, bad_lat, bad_lon]))
+    scraper = planet_aid.PlanetAidScraper()
+    recs = list(scraper.fetch(_compact_region()))
+    assert {r.source_ref for r in recs} == {"ok"}    # dirty rows skipped, good row kept
+    assert scraper.fetch_failures == 0               # a dirty coord is not a fetch failure
+
+
+# --- property-based: completeness oracle, termination, invariants, backward-compat ----------------
+
+def test_hypothesis_is_available_for_property_suite():
+    # The property-based completeness/termination proofs live behind `if HAVE_HYPOTHESIS`; if the dep
+    # is missing they silently VANISH and the suite still reports green. Fail loudly instead so a
+    # mis-provisioned runner is caught. hypothesis is pinned in backend/requirements-dev.txt.
+    assert HAVE_HYPOTHESIS, "hypothesis not installed — the property-based proofs did not run"
+
+if HAVE_HYPOTHESIS:
+
+    # Distinct points on a 0.01-deg (~1.1 km) lattice, comfortably coarser than the ~556 m floor, so
+    # no floor cell ever holds > N_CAP bins -> the completeness guarantee is exact (no residual).
+    _cells = st.lists(st.tuples(st.integers(-5, 5), st.integers(-5, 5)), max_size=60, unique=True)
+    # Arbitrary (possibly co-located) coords across the compact region + its margin, for termination
+    # and invariant properties where subdivision is genuinely exercised.
+    _pts = st.lists(
+        st.tuples(st.floats(39.90, 40.10, allow_nan=False, allow_infinity=False),
+                  st.floats(-83.10, -82.90, allow_nan=False, allow_infinity=False)),
+        max_size=40,
+    )
+
+    @settings(max_examples=100, deadline=None)
+    @given(_cells)
+    def test_property_completeness_oracle(cells):
+        # THE rigorous proof: the set of in-region bins the sweep yields EXACTLY equals the brute-force
+        # oracle of all bins inside the swept bbox — subdivision recovers precisely the bins the coarse
+        # grid dropped, no more (no fabrication), no fewer (no misses).
+        region = _compact_region()
+        universe = [_site(f"o{idx}", round(40.0 + i * 0.01, 6), round(-83.0 + j * 0.01, 6))
+                    for idx, (i, j) in enumerate(cells)]
+        client = _NearestNClient(universe)
+        recs, _ = _run_fetch(region, client)
+        yielded = {r.source_ref for r in recs}
+        oracle = {s["id"] for s in universe
+                  if region.contains(s["geoPoint"]["latitude"], s["geoPoint"]["longitude"], margin=0.05)}
+        assert yielded == oracle
+
+    @settings(max_examples=150, deadline=None)
+    @given(_pts)
+    def test_property_terminates_and_bounded(pts):
+        # ANY universe, including adversarial co-location, must return and stay within the analytic
+        # quadtree cell bound (proves no unbounded recursion / runaway call count).
+        universe = [_site(f"t{k}", round(la, 6), round(lo, 6)) for k, (la, lo) in enumerate(pts)]
+        client = _NearestNClient(universe)
+        recs, _ = _run_fetch(_compact_region(), client)
+        assert client.calls <= _BOUND
+        assert isinstance(recs, list)
+
+    @settings(max_examples=150, deadline=None)
+    @given(_pts)
+    def test_property_invariants_under_subdivision(pts):
+        # Re-assert the core invariants with the subdivision path exercised: unique refs, every coord
+        # in-region, no fabricated ids, and a clean run leaves fetch_failures at 0.
+        region = _compact_region()
+        universe = [_site(f"i{k}", round(la, 6), round(lo, 6)) for k, (la, lo) in enumerate(pts)]
+        client = _NearestNClient(universe)
+        recs, scraper = _run_fetch(region, client)
+        refs = [r.source_ref for r in recs]
+        assert len(refs) == len(set(refs))                     # unique
+        for r in recs:
+            assert region.contains(r.lat, r.lon, margin=0.05)  # in-region
+        assert set(refs) <= {s["id"] for s in universe}        # no fabrication
+        assert scraper.fetch_failures == 0                     # clean run
+
+    @settings(max_examples=100, deadline=None)
+    @given(st.lists(
+        st.tuples(st.floats(39.85, 40.15, allow_nan=False, allow_infinity=False),
+                  st.floats(-83.25, -82.75, allow_nan=False, allow_infinity=False)),
+        max_size=planet_aid.N_CAP - 1))
+    def test_property_small_payload_never_subdivides(pts):
+        # Machine-checked backward-compat: any universe with < N_CAP bins yields exactly the baseline
+        # seed-cell call count (the len(data) < N_CAP short-circuit blocks every subdivision).
+        region = _multi_cell_region()
+        universe = [_site(f"s{k}", round(la, 6), round(lo, 6)) for k, (la, lo) in enumerate(pts)]
+        client = _NearestNClient(universe)
+        _run_fetch(region, client)
+        assert client.calls == _seed_count(region)
 
 
 if __name__ == "__main__":
