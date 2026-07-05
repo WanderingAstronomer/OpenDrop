@@ -398,36 +398,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 /* Drag-pin tooltip */
 .pin-tip { font-weight: 600; }
 
-/* ============================ POPOVER ==================================== */
-.po-popup .leaflet-popup-content-wrapper {
-  background: var(--surface); color: var(--ink); border-radius: var(--r-card);
-  box-shadow: var(--shadow); border: 1px solid var(--border); padding: 0;
-}
-/* margin:0 so our own .popover padding controls spacing — but DON'T touch width:
-   Leaflet sets an inline width here to honour the popup's minWidth/maxWidth. */
-.po-popup .leaflet-popup-content { margin: 0; max-height: min(68vh, 540px); display: flex; }
-.po-popup .leaflet-popup-tip { background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); }
-/* 40x40 close target; the header reserves clearance for it */
-.po-popup .leaflet-popup-close-button {
-  width: 40px; height: 40px; top: 4px; right: 4px; padding: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 22px; line-height: 1; color: var(--ink-3); border-radius: var(--r-input);
-}
-.po-popup .leaflet-popup-close-button:hover { color: var(--ink); background: var(--surface-2); }
-.po-popup .leaflet-popup-close-button:focus-visible { box-shadow: var(--focus); }
-
-/* Popovers live inside Leaflet's map pane, where the chrome `zoom` must not apply (it would break
-   popup anchoring) — so the +25% UI scale is delivered here as explicit font bumps instead.
-   Header stays pinned; .po-body scrolls inside the height-capped popup. */
-.popover { display: flex; flex-direction: column; min-height: 0; padding: 16px 18px; }
-.po-head { padding-right: 36px; margin-bottom: 10px; }
+/* ===== PLACE-PANEL BODY (content blocks ported from the retired Leaflet popup) ===== */
 .po-skel { font-size: var(--fs-body); color: var(--ink-2); padding: 10px 4px; min-width: 220px; }
 .po-meta { display: flex; flex-direction: column; gap: 6px; }
-.po-directions { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; text-decoration: none; }
-.po-title { margin: 0; font-size: 21px; font-weight: 700; line-height: 1.25; color: var(--ink); }
-.po-sub { color: var(--ink-2); font-size: 15px; margin-top: 3px; }
 
-.po-body { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; min-height: 0; overscroll-behavior: contain; padding-right: 2px; }
 .po-row { display: flex; gap: 8px; font-size: 16px; line-height: 1.45; color: var(--ink); }
 .po-ic { flex: none; width: 18px; text-align: center; }
 .po-links { display: flex; gap: 14px; font-size: 16px; }
@@ -452,8 +426,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .corrections-area:empty, .fieldedits-area:empty { display: none; }
 
 .vote-q { font-size: 15px; color: var(--ink-2); margin: 0 0 7px; font-weight: 600; }
-.popover .btn { font-size: 16px; padding: 11px 16px; }
-.popover .btn.tiny { font-size: 14px; padding: 7px 12px; }
 .vote-btns { display: flex; gap: 8px; }
 .vote-btns .btn { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
 /* persistent semantic tints — touch users never see :hover */
@@ -591,7 +563,6 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
 /* token remaps for popover stragglers */
 .sig-rate-toggle, .rate-l, .po-report-hint, .fix-meter { font-size: var(--fs-small); }
 .sig-n { font-size: var(--fs-caption); padding: 1px 8px; min-width: 22px; }
-.po-title { font-size: var(--fs-title); }
 
 /* icon slots (SVG icon language — no emoji) */
 .po-ic { flex: none; width: 18px; display: inline-flex; justify-content: center; color: var(--ink-3); }
@@ -907,8 +878,7 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
 /* Stronger card separation over dark satellite imagery (both themes) */
 .satellite-active .legend,
 .satellite-active .search input,
-.satellite-active .panel,
-.satellite-active .po-popup .leaflet-popup-content-wrapper { box-shadow: 0 2px 18px rgba(0, 0, 0, 0.55); }
+.satellite-active .panel { box-shadow: 0 2px 18px rgba(0, 0, 0, 0.55); }
 
 /* ============================ DETAIL-PANEL + CHROME REFINEMENTS ========= */
 /* zoom buttons in the bottom-right stack (above the locate button) */
