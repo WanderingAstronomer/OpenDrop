@@ -175,12 +175,15 @@ def test_submit_missing_token_403(client):
 
 @requires_db
 def test_image_votes_promote_and_apply_pin_correction(conn, client):
-    """A correction photo: helpful votes promote pending->visible, and at score 3 the
-    pin auto-moves to the suggested location (community-validated, no moderator)."""
+    """A correction photo: helpful votes promote pending->visible, and at score 3 a SMALL move
+    (<=250 m, Band A of the migration 0013 two-band safeguard) auto-moves the pin to the suggested
+    location (community-validated, no moderator). Larger moves are held for review — see
+    test_photo_correction_guard.py."""
     loc = _mk_location(conn, "img correction test", lat=40.00, lon=-83.00)
+    # ~0.001 deg lat ~= 111 m from origin -> Band A (within the 250 m auto-apply radius).
     img = conn.execute(
         "INSERT INTO location_images (location_id, path, mime, submitter_ip_hash, suggested_lat, suggested_lon) "
-        "VALUES (%s,'x.jpg','image/jpeg','h',40.01,-83.01) RETURNING id", (loc,)
+        "VALUES (%s,'x.jpg','image/jpeg','h',40.001,-83.000) RETURNING id", (loc,)
     ).fetchone()["id"]
     conn.commit()
     # default list excludes a 'pending' photo; gallery (include_low) shows it
@@ -193,9 +196,9 @@ def test_image_votes_promote_and_apply_pin_correction(conn, client):
     row = conn.execute("SELECT score, status, applied FROM location_images WHERE id=%s", (img,)).fetchone()
     assert row["score"] == 3 and row["status"] == "visible" and row["applied"] is True
     geo = conn.execute(
-        "SELECT round(ST_Y(geom)::numeric,2) AS lat, round(ST_X(geom)::numeric,2) AS lon FROM locations WHERE id=%s", (loc,)
+        "SELECT round(ST_Y(geom)::numeric,3) AS lat, round(ST_X(geom)::numeric,3) AS lon FROM locations WHERE id=%s", (loc,)
     ).fetchone()
-    assert float(geo["lat"]) == 40.01 and float(geo["lon"]) == -83.01
+    assert float(geo["lat"]) == 40.001 and float(geo["lon"]) == -83.000
 
 
 @requires_db

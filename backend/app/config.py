@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # The migration this image's code expects to be present. At boot the API checks schema_migrations
     # for this row: in prod it REFUSES to start if missing (blocks 'new code vs old schema' drift);
     # in dev it only warns. Bump this whenever a new migration is required by the code.
-    expected_schema_version: str = "0012_photo_correction_parity_and_bounds.sql"
+    expected_schema_version: str = "0013_photo_move_bands.sql"
     # Extra comma-separated words rejected in submissions, MERGED with the baked-in default
     # denylist (moderation._DEFAULT_DENYLIST). Operators extend, they don't replace.
     content_denylist: str = ""
@@ -58,6 +58,15 @@ class Settings(BaseSettings):
     # 0007_correction_anchor_and_retire_fix.sql (both the API guard and the trigger measure the
     # move from the immutable origin, not the current geom, so corrections cannot walk a pin).
     correction_max_move_m: int = 2000
+    # TWO-BAND photo pin-move safeguard (migration 0013). A photo-suggested move that clears the
+    # score gate is auto-applied ONLY when it is within photo_auto_apply_move_m of the immutable
+    # origin (Band A). A larger move (still <= correction_max_move_m) is held for operator review
+    # instead of auto-applying, and only if it has at least photo_large_move_min_voters DISTINCT
+    # INDEPENDENT helpful upvoters (Band B); otherwise the pin is left untouched. These mirror the
+    # hardcoded SQL constants in recompute_image()/apply_pending_image_move() (plpgsql can't read
+    # app config) — keep the two in sync.
+    photo_auto_apply_move_m: int = 250
+    photo_large_move_min_voters: int = 4
     # Radius within which a client may claim GPS corroboration ("I'm standing here"). Used by the
     # frontend only — the server never receives coordinates, just the resulting boolean.
     gps_corroboration_radius_m: int = 75

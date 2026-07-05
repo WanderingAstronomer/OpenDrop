@@ -371,3 +371,64 @@ async def revert_actor(body: RevertActorIn):
                     superseded += 1
     return {"ok": True, "actor_ip_hash": body.actor_ip_hash, "reverted": reverted,
             "superseded": superseded, "locations_affected": len(locations)}
+
+
+# --------------------------------------------------------------------------- operator: photo-move queue
+
+@router.get("/admin/images/pending-moves", dependencies=[Depends(require_operator)])
+async def list_pending_image_moves(limit: int = 200):
+    """Photo pin-moves held for operator review (Band B: >250 m and <=2 km from origin, with enough
+    independent support). The pin has NOT been moved — apply-move commits it, reject-move drops it.
+    Distance is the actual move (metres from the immutable origin); independent_voters excludes the
+    photo's own submitter. WHERE apply_state='pending_review' matches the partial-index predicate."""
+    limit = max(1, min(limit, 1000))
+    async with db.pool.connection() as conn:
+        cur = await conn.execute(
+            """SELECT i.id AS image_id, i.location_id, i.score,
+                      ST_Distance(COALESCE(l.origin_geom, l.geom)::geography,
+                                  ST_SetSRID(ST_MakePoint(i.suggested_lon, i.suggested_lat), 4326)::geography)
+                        AS distance_m,
+                      (SELECT count(DISTINCT iv.ip_hash)
+                         FILTER (WHERE iv.helpful AND iv.ip_hash <> i.submitter_ip_hash)
+                       FROM image_votes iv WHERE iv.image_id = i.id) AS independent_voters,
+                      i.created_at
+               FROM location_images i
+               JOIN locations l ON l.id = i.location_id
+               WHERE i.apply_state = 'pending_review'
+               ORDER BY i.created_at ASC
+               LIMIT %s""",
+            (limit,))
+        rows = await cur.fetchall()
+    return {"pending_moves": [dict(r) for r in rows], "count": len(rows)}
+
+
+@router.post("/admin/images/{img_id}/apply-move", dependencies=[Depends(require_operator)])
+async def apply_image_move(img_id: int):
+    """Commit a held (pending_review) photo pin-move. Re-checks the 2 km origin cap inside the DB
+    function, moves the pin, and writes the same revertible moderation_audit row a Band A auto-apply
+    would have. Surfaces the function result: 'applied' | 'too_far' (409) | 'not_pending' (409)."""
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            cur = await conn.execute("SELECT apply_pending_image_move(%s) AS result", (img_id,))
+            result = (await cur.fetchone())["result"]
+    if result == "applied":
+        return {"ok": True, "image_id": img_id, "result": result}
+    if result == "too_far":
+        raise HTTPException(409, {"code": "too_far",
+                                  "message": "suggested move exceeds the 2 km origin cap"})
+    # 'not_pending' — no pending-review move on this image (never queued, or already resolved).
+    raise HTTPException(409, {"code": "not_pending", "message": "no pending-review move for this image"})
+
+
+@router.post("/admin/images/{img_id}/reject-move", dependencies=[Depends(require_operator)])
+async def reject_image_move(img_id: int):
+    """Reject a held photo pin-move: set apply_state='rejected'. NEVER moves the pin. Idempotent —
+    only a row currently in pending_review transitions (404 otherwise)."""
+    async with db.pool.connection() as conn:
+        cur = await conn.execute(
+            "UPDATE location_images SET apply_state = 'rejected' "
+            "WHERE id = %s AND apply_state = 'pending_review' RETURNING id", (img_id,))
+        ok = await cur.fetchone() is not None
+    if not ok:
+        raise HTTPException(404, {"code": "not_found", "message": "no pending-review move for this image"})
+    return {"ok": True, "image_id": img_id, "apply_state": "rejected"}

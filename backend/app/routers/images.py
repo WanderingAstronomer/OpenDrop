@@ -23,7 +23,7 @@ async def list_images(loc_id: int, include_low: bool = False):
     statuses = ["pending", "visible", "hidden"] if include_low else ["visible"]
     async with db.pool.connection() as conn:
         cur = await conn.execute(
-            """SELECT id, path, score, upvotes, downvotes, status, applied,
+            """SELECT id, path, score, upvotes, downvotes, status, applied, apply_state,
                       (suggested_lat IS NOT NULL) AS is_correction
                FROM location_images
                WHERE location_id = %s AND status = ANY(%s) AND removed_at IS NULL
@@ -34,7 +34,8 @@ async def list_images(loc_id: int, include_low: bool = False):
     return {"images": [
         {"id": r["id"], "url": f"/media/{r['path']}", "score": r["score"],
          "upvotes": r["upvotes"], "downvotes": r["downvotes"], "status": r["status"],
-         "is_correction": r["is_correction"], "applied": r["applied"]}
+         "is_correction": r["is_correction"], "applied": r["applied"],
+         "apply_state": r["apply_state"]}
         for r in rows]}
 
 

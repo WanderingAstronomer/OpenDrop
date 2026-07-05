@@ -92,14 +92,28 @@ def test_photo_move_beyond_2km_does_not_apply(conn, client):
 
 @requires_db
 def test_photo_move_within_cap_applies_and_is_revertible(conn, client, op):
-    """A legitimate small photo move (<2 km) still applies, now with a moderation_audit row so an
-    operator can revert it — the same accountability the drag-pin path already had."""
+    """A large-but-bounded photo move (~1.4 km, Band B) is now HELD for operator review, not
+    auto-applied (owner sign-off 2026-07-05). With >=4 independent upvoters it lands in
+    apply_state='pending_review' with the pin UNCHANGED; an operator then applies it, which moves
+    the pin, writes the same revertible moderation_audit row, and revert still restores the origin."""
     loc = _mk_location(conn, "near photo move", lat=40.00, lon=-83.00)
-    img = _mk_correction_image(conn, loc, slat=40.01, slon=-83.01)  # ~1.4 km from origin
-    for i in range(3):
+    img = _mk_correction_image(conn, loc, slat=40.01, slon=-83.01)  # ~1.4 km from origin -> Band B
+    for i in range(4):   # 4 DISTINCT INDEPENDENT helpful upvoters -> qualifies for the hold
         client.post(f"/api/images/{img}/vote", json={"vote": "helpful", "turnstile_token": TOK},
                     headers={"X-Real-IP": f"10.31.0.{i}"})
-    assert conn.execute("SELECT applied FROM location_images WHERE id=%s", (img,)).fetchone()["applied"] is True
+    row = conn.execute("SELECT applied, apply_state FROM location_images WHERE id=%s", (img,)).fetchone()
+    assert row["applied"] is False and row["apply_state"] == "pending_review"
+    assert _geom(conn, loc) == (40.00, -83.00)             # pin NOT moved while pending
+
+    # It surfaces in the operator pending-moves queue.
+    q = client.get("/api/admin/images/pending-moves", headers=op).json()["pending_moves"]
+    assert any(m["image_id"] == img and m["independent_voters"] >= 4 for m in q)
+
+    # Operator applies the held move: pin moves + audit row written.
+    ap = client.post(f"/api/admin/images/{img}/apply-move", headers=op)
+    assert ap.status_code == 200 and ap.json()["result"] == "applied"
+    assert conn.execute("SELECT applied, apply_state FROM location_images WHERE id=%s",
+                        (img,)).fetchone()["apply_state"] == "approved"
     assert _geom(conn, loc) == (40.01, -83.01)
 
     audit = client.get(f"/api/admin/locations/{loc}/audit", headers=op).json()["audit"]
@@ -107,6 +121,76 @@ def test_photo_move_within_cap_applies_and_is_revertible(conn, client, op):
     rev = client.post(f"/api/admin/audit/{audit[0]['id']}/revert", json={"note": "photo move undo"}, headers=op)
     assert rev.status_code == 200 and rev.json()["result"] == "reverted"
     assert _geom(conn, loc) == (40.00, -83.00)             # restored to origin
+
+
+@requires_db
+def test_photo_small_move_auto_applies_band_a(conn, client, op):
+    """BAND A: a small move (<=250 m from origin) that clears the score gate auto-applies
+    immediately (as 0012), sets apply_state='approved', and writes a revertible audit row."""
+    loc = _mk_location(conn, "band a small move", lat=40.00, lon=-83.00)
+    # ~0.001 deg lat ~= 111 m; well within the 250 m Band A radius.
+    img = _mk_correction_image(conn, loc, slat=40.001, slon=-83.000)
+    for i in range(3):
+        client.post(f"/api/images/{img}/vote", json={"vote": "helpful", "turnstile_token": TOK},
+                    headers={"X-Real-IP": f"10.32.0.{i}"})
+    row = conn.execute("SELECT applied, apply_state FROM location_images WHERE id=%s", (img,)).fetchone()
+    assert row["applied"] is True and row["apply_state"] == "approved"
+    assert _geom(conn, loc) == (40.00, -83.00)   # rounds to 2dp; check precise below
+    r = conn.execute("SELECT round(ST_Y(geom)::numeric,3) AS lat, round(ST_X(geom)::numeric,3) AS lon "
+                     "FROM locations WHERE id=%s", (loc,)).fetchone()
+    assert (float(r["lat"]), float(r["lon"])) == (40.001, -83.000)
+    audit = client.get(f"/api/admin/locations/{loc}/audit", headers=op).json()["audit"]
+    assert len(audit) == 1 and audit[0]["kind"] == "pin_correction"
+
+
+@requires_db
+def test_photo_large_move_with_enough_voters_holds_then_operator_applies(conn, client, op):
+    """BAND B: a >250 m, <=2 km move with 4 distinct independent upvoters -> pending_review, pin
+    unchanged; the operator apply-move endpoint then commits it."""
+    loc = _mk_location(conn, "band b enough voters", lat=40.00, lon=-83.00)
+    img = _mk_correction_image(conn, loc, slat=40.01, slon=-83.00)  # ~1.1 km from origin
+    for i in range(4):
+        client.post(f"/api/images/{img}/vote", json={"vote": "helpful", "turnstile_token": TOK},
+                    headers={"X-Real-IP": f"10.33.0.{i}"})
+    row = conn.execute("SELECT applied, apply_state FROM location_images WHERE id=%s", (img,)).fetchone()
+    assert row["applied"] is False and row["apply_state"] == "pending_review"
+    assert _geom(conn, loc) == (40.00, -83.00)   # not moved while pending
+
+    ap = client.post(f"/api/admin/images/{img}/apply-move", headers=op)
+    assert ap.status_code == 200 and ap.json()["result"] == "applied"
+    assert _geom(conn, loc) == (40.01, -83.00)
+
+
+@requires_db
+def test_photo_large_move_too_few_voters_stays_none(conn, client, op):
+    """BAND B floor: a >250 m, <=2 km move with only 3 independent upvoters stays apply_state='none'
+    — the photo still vouches (score 3) but the pin is neither moved nor queued."""
+    loc = _mk_location(conn, "band b too few voters", lat=40.00, lon=-83.00)
+    img = _mk_correction_image(conn, loc, slat=40.01, slon=-83.00)  # ~1.1 km from origin
+    for i in range(3):   # only 3 independent upvoters -> below the 4-voter floor
+        client.post(f"/api/images/{img}/vote", json={"vote": "helpful", "turnstile_token": TOK},
+                    headers={"X-Real-IP": f"10.34.0.{i}"})
+    row = conn.execute("SELECT score, applied, apply_state FROM location_images WHERE id=%s", (img,)).fetchone()
+    assert row["score"] == 3 and row["applied"] is False and row["apply_state"] == "none"
+    assert _geom(conn, loc) == (40.00, -83.00)   # untouched
+    # Not in the pending queue either.
+    q = client.get("/api/admin/images/pending-moves", headers=op).json()["pending_moves"]
+    assert all(m["image_id"] != img for m in q)
+
+
+@requires_db
+def test_photo_move_beyond_2km_neither_applies_nor_queues(conn, client, op):
+    """A >2 km move never applies AND never queues, even with plenty of independent upvoters."""
+    loc = _mk_location(conn, "beyond 2km no queue", lat=40.00, lon=-83.00)
+    img = _mk_correction_image(conn, loc, slat=41.00, slon=-83.00)  # ~111 km from origin
+    for i in range(4):
+        client.post(f"/api/images/{img}/vote", json={"vote": "helpful", "turnstile_token": TOK},
+                    headers={"X-Real-IP": f"10.35.0.{i}"})
+    row = conn.execute("SELECT applied, apply_state FROM location_images WHERE id=%s", (img,)).fetchone()
+    assert row["applied"] is False and row["apply_state"] == "none"
+    assert _geom(conn, loc) == (40.00, -83.00)
+    q = client.get("/api/admin/images/pending-moves", headers=op).json()["pending_moves"]
+    assert all(m["image_id"] != img for m in q)
 
 
 @requires_db
