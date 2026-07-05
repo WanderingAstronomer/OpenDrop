@@ -176,8 +176,10 @@ async function renderGrid(m, locId, includeLow) {
       `<div class="ph-report"></div>`;
     attachFallback(card.querySelector("img"));
     const tsHost = card.querySelector(".ph-ts");
-    card.querySelector(".ph-h").onclick = (e) => doVote(im.id, "helpful", m, locId, includeLow, tsHost, e.currentTarget);
-    card.querySelector(".ph-u").onclick = (e) => doVote(im.id, "unhelpful", m, locId, includeLow, tsHost, e.currentTarget);
+    const helpfulBtn = card.querySelector(".ph-h");
+    const unhelpfulBtn = card.querySelector(".ph-u");
+    helpfulBtn.onclick = () => doVote(im.id, "helpful", m, locId, includeLow, tsHost, helpfulBtn, unhelpfulBtn);
+    unhelpfulBtn.onclick = () => doVote(im.id, "unhelpful", m, locId, includeLow, tsHost, unhelpfulBtn, helpfulBtn);
     card.querySelector(".ph-r").onclick = () =>
       openImageReport(card.querySelector(".ph-report"), im.id, m, locId, includeLow);
     grid.appendChild(card);
@@ -216,7 +218,8 @@ function openImageReport(container, imgId, m, locId, includeLow) {
   };
 }
 
-async function doVote(imgId, vote, m, locId, includeLow, tsHost, btn) {
+async function doVote(imgId, vote, m, locId, includeLow, tsHost, btn, otherBtn) {
+  if (otherBtn) otherBtn.disabled = true; // latch the sibling vote button; guard() disables `btn`
   try {
     const res = await guard(tsHost, btn, { action: "rate_photo" }, (token) => voteImage(imgId, vote, token));
     if (res && res.applied) {
@@ -227,8 +230,9 @@ async function doVote(imgId, vote, m, locId, includeLow, tsHost, btn) {
     } else {
       toast("Thanks — feedback recorded", "success");
     }
-    renderGrid(m, locId, includeLow);
+    renderGrid(m, locId, includeLow); // rebuilds the card (fresh buttons) — no manual restore on success
   } catch (e) {
+    if (otherBtn) otherBtn.disabled = false; // restore the sibling for retry (guard() restored `btn`)
     if (e.status === 403) toast(verifyFailMessage(), "error");
     else if (e.status === 429) toast("You already rated this photo", "error");
     else toast("Couldn't record your rating", "error");

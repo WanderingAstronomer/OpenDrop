@@ -51,7 +51,10 @@ export function mountFieldEdits(host, d) {
   host.querySelectorAll(".po-fix").forEach((row) => {
     const cid = Number(row.dataset.cid);
     const tsHost = row.querySelector(".fix-ts");
-    const onVote = async (confirm, btn) => {
+    const confirmBtn = row.querySelector(".confirm");
+    const denyBtn = row.querySelector(".deny");
+    const onVote = async (confirm, btn, otherBtn) => {
+      if (otherBtn) otherBtn.disabled = true; // guard() disables `btn`; latch its pair so both can't POST
       try {
         const res = await guard(tsHost, btn, { action: "confirm_field" }, (token) =>
           voteFieldCorrection(cid, { confirm, turnstile_token: token }));
@@ -64,17 +67,19 @@ export function mountFieldEdits(host, d) {
           row.remove();
         } else {
           row.querySelector(".fix-meter").textContent = supportLine(res.support, res.required_support);
+          if (otherBtn) otherBtn.disabled = false; // meter-update keeps the row — re-arm the pair
           toast("Vote recorded — thank you", "success");
         }
       } catch (e) {
+        if (otherBtn) otherBtn.disabled = false; // restore the pair (guard() restored `btn`)
         if (e.status === 409 && e.error?.code === "self_vote") toast("You can't vote on your own suggestion", "info");
         else if (e.status === 409) toast("That suggestion is already closed", "info");
         else if (e.status === 403) toast(verifyFailMessage(), "error");
         else toast("Couldn't record your vote", "error");
       }
     };
-    row.querySelector(".confirm").onclick = (e) => onVote(true, e.currentTarget);
-    row.querySelector(".deny").onclick = (e) => onVote(false, e.currentTarget);
+    confirmBtn.onclick = () => onVote(true, confirmBtn, denyBtn);
+    denyBtn.onclick = () => onVote(false, denyBtn, confirmBtn);
   });
 }
 
