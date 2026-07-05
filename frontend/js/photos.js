@@ -3,8 +3,9 @@
 // module is purely about photos — no map-picking here anymore.
 
 import { fetchImages, reportImage, uploadImage, voteImage } from "./api.js";
+import { app } from "./state.js";
 import { toast } from "./toast.js";
-import { guard } from "./turnstile.js";
+import { guard, verifyFailMessage } from "./turnstile.js";
 
 function modalEl() {
   return document.getElementById("photo-modal");
@@ -30,6 +31,15 @@ function attachFallback(img) {
   });
 }
 
+// Visible, focusable descendants of a modal card (mirror of submit.js) — recomputed per keystroke so
+// the Tab trap always reflects the current DOM after a gallery re-render.
+function focusables(root) {
+  return Array.from(root.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), '
+    + 'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  )).filter((el) => el.offsetParent !== null);
+}
+
 let modalOpener = null;   // element to hand focus back to when the modal closes
 let modalKeydown = null;  // active Escape handler (removed on close / re-render)
 
@@ -48,7 +58,21 @@ function closeModal() {
 // same modal (the gallery re-renders itself when the "show low-rated" toggle changes).
 function armModal(m) {
   if (modalKeydown) document.removeEventListener("keydown", modalKeydown);
-  modalKeydown = (e) => { if (e.key === "Escape") closeModal(); };
+  modalKeydown = (e) => {
+    if (e.key === "Escape") { closeModal(); return; }
+    if (e.key !== "Tab") return;
+    // These modals have no interactive map behind them, so aria-modal is honest — trap Tab inside
+    // the card. Scope to .modal-card (not the outer shell) and recompute per keystroke so re-renders
+    // (toggle/vote/report) need no rewiring.
+    const card = m.querySelector(".modal-card");
+    if (!card) return;
+    const f = focusables(card);
+    if (!f.length) return;
+    const first = f[0];
+    const last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  };
   document.addEventListener("keydown", modalKeydown);
   const c = m.querySelector(".modal-close");
   if (c) try { c.focus({ preventScroll: true }); } catch (e) { /* not focusable yet */ }
@@ -61,11 +85,21 @@ export async function mountPhotos(host, locId) {
     `<div class="ph-actions">` +
     `<button class="btn ghost ph-gallery" type="button">Photos</button>` +
     `<button class="btn ghost ph-add" type="button">Add photo</button></div>`;
+  const gallery = host.querySelector(".ph-gallery");
+  const add = host.querySelector(".ph-add");
+  // Wire handlers BEFORE the await so a slow/failed fetch can never leave the buttons inert.
+  gallery.onclick = () => openGallery(locId);
+  add.onclick = () => openUpload(locId);
   const data = await fetchImages(locId, false);
   const imgs = data.images || [];
-  host.querySelector(".ph-gallery").textContent = `Photos (${imgs.length})`;
-  host.querySelector(".ph-gallery").onclick = () => openGallery(locId);
-  host.querySelector(".ph-add").onclick = () => openUpload(locId);
+  if (data.failed) {
+    gallery.textContent = "Photos";
+    const top = host.querySelector(".ph-top");
+    top.innerHTML = `<button class="btn ghost ph-retry" type="button">Couldn't load photos — retry</button>`;
+    top.querySelector(".ph-retry").onclick = () => mountPhotos(host, locId);
+    return;
+  }
+  gallery.textContent = `Photos (${imgs.length})`;
   if (imgs.length) {
     const top = host.querySelector(".ph-top");
     top.innerHTML = `<img class="ph-thumb" src="${imgs[0].url}" alt="Open photo gallery" ` +
@@ -80,6 +114,10 @@ export async function mountPhotos(host, locId) {
 }
 
 /* ---- gallery modal ---- */
+// The modal shell (head, checkbox, close) is built ONCE here; the thumbnails render into .ph-grid
+// via renderGrid(). The old code rebuilt the whole shell on every "show low-rated" toggle — which
+// re-armed the modal and yanked focus back to the close button each time, so toggling flickered
+// rapidly. Now the toggle only re-renders the grid; the shell stays put.
 async function openGallery(locId, includeLow = false) {
   const m = modalEl();
   if (!m.classList.contains("open")) modalOpener = document.activeElement;  // capture once per session
@@ -90,13 +128,33 @@ async function openGallery(locId, includeLow = false) {
     `<div class="modal-head"><strong>Photos</strong>` +
     `<label class="ph-low"><input type="checkbox" ${includeLow ? "checked" : ""}/> show low-rated / unverified</label>` +
     `<button class="modal-close" aria-label="Close">✕</button></div>` +
-    `<div class="ph-grid"></div></div>`;
+    `<div class="ph-grid" aria-busy="true"></div></div>`;
   m.querySelector(".modal-close").onclick = closeModal;
-  m.querySelector(".ph-low input").onchange = (e) => openGallery(locId, e.target.checked);
+  const lowInput = m.querySelector(".ph-low input");
+  lowInput.onchange = () => renderGrid(m, locId, lowInput.checked);
   armModal(m);
+  await renderGrid(m, locId, includeLow);
+}
 
+// Render just the thumbnails into the already-mounted grid. Safe to call repeatedly (on toggle,
+// after a vote, after a report) without touching the shell — so nothing flickers or steals focus.
+let galleryReq = 0;
+async function renderGrid(m, locId, includeLow) {
   const grid = m.querySelector(".ph-grid");
-  const imgs = (await fetchImages(locId, includeLow)).images || [];
+  if (!grid) return;
+  const seq = ++galleryReq;
+  grid.setAttribute("aria-busy", "true");
+  const data = await fetchImages(locId, includeLow);
+  if (seq !== galleryReq || !grid.isConnected) return;  // a newer toggle/refresh superseded this one
+  grid.removeAttribute("aria-busy"); // ALWAYS clear busy on the live path — never hang on a failure
+  grid.innerHTML = "";
+  if (data.failed) {
+    grid.innerHTML = `<p class="ph-empty">Couldn't load photos.</p>` +
+      `<div class="ph-actions"><button class="btn ghost ph-retry" type="button">Retry</button></div>`;
+    grid.querySelector(".ph-retry").onclick = () => renderGrid(m, locId, includeLow);
+    return;
+  }
+  const imgs = data.images || [];
   if (!imgs.length) {
     grid.innerHTML = `<p class="ph-empty">No photos yet — add the first one.</p>`;
     return;
@@ -118,10 +176,10 @@ async function openGallery(locId, includeLow = false) {
       `<div class="ph-report"></div>`;
     attachFallback(card.querySelector("img"));
     const tsHost = card.querySelector(".ph-ts");
-    card.querySelector(".ph-h").onclick = (e) => doVote(im.id, "helpful", locId, includeLow, tsHost, e.currentTarget);
-    card.querySelector(".ph-u").onclick = (e) => doVote(im.id, "unhelpful", locId, includeLow, tsHost, e.currentTarget);
+    card.querySelector(".ph-h").onclick = (e) => doVote(im.id, "helpful", m, locId, includeLow, tsHost, e.currentTarget);
+    card.querySelector(".ph-u").onclick = (e) => doVote(im.id, "unhelpful", m, locId, includeLow, tsHost, e.currentTarget);
     card.querySelector(".ph-r").onclick = () =>
-      openImageReport(card.querySelector(".ph-report"), im.id, locId, includeLow);
+      openImageReport(card.querySelector(".ph-report"), im.id, m, locId, includeLow);
     grid.appendChild(card);
   });
 }
@@ -129,12 +187,12 @@ async function openGallery(locId, includeLow = false) {
 // Inline "report this photo" form, revealed under a gallery card. Optional free-text reason; a
 // single report just files a complaint, but once enough distinct reporters flag a photo the API
 // soft-hides it (reversibly) and returns hidden=true.
-function openImageReport(container, imgId, locId, includeLow) {
+function openImageReport(container, imgId, m, locId, includeLow) {
   if (container.dataset.open) { container.innerHTML = ""; delete container.dataset.open; return; }
   container.dataset.open = "1";
   container.innerHTML =
-    `<input class="ph-report-reason" maxlength="500" type="text" ` +
-    `placeholder="What's wrong with this photo? (optional)" aria-label="Reason for report" />` +
+    `<textarea class="ph-report-reason" maxlength="500" rows="3" ` +
+    `placeholder="What's wrong with this photo? (optional)" aria-label="Reason for report"></textarea>` +
     `<div class="ts ph-report-ts"></div>` +
     `<div class="ph-report-actions">` +
     `<button class="btn tiny danger ph-report-send" type="button">Send report</button>` +
@@ -147,9 +205,9 @@ function openImageReport(container, imgId, locId, includeLow) {
       const d = await guard(tsHost, e.currentTarget, { action: "report" },
         (token) => reportImage(imgId, { reason: reason || null, turnstile_token: token }));
       toast(d.hidden ? "Reported — photo hidden pending review" : "Thanks — reported for review", "success");
-      openGallery(locId, includeLow);
+      renderGrid(m, locId, includeLow);
     } catch (err) {
-      if (err.status === 403) toast("Please complete the verification first", "error");
+      if (err.status === 403) toast(verifyFailMessage(), "error");
       else if (err.status === 429) toast("Daily report limit reached", "error");
       else if (err.status === 422) toast(err.error?.message || "Report rejected", "error");
       else if (err.status === 404) toast("That photo is no longer available", "error");
@@ -158,13 +216,20 @@ function openImageReport(container, imgId, locId, includeLow) {
   };
 }
 
-async function doVote(imgId, vote, locId, includeLow, tsHost, btn) {
+async function doVote(imgId, vote, m, locId, includeLow, tsHost, btn) {
   try {
-    await guard(tsHost, btn, { action: "rate_photo" }, (token) => voteImage(imgId, vote, token));
-    toast("Thanks — feedback recorded", "success");
-    openGallery(locId, includeLow);
+    const res = await guard(tsHost, btn, { action: "rate_photo" }, (token) => voteImage(imgId, vote, token));
+    if (res && res.applied) {
+      // The vote pushed a photo-validated pin correction over its threshold: the location MOVED.
+      // Bust the over-fetch cache so the pin renders at its new position (mirrors panel.js).
+      toast("Photo confirmed the fix — pin updated!", "success");
+      app.refresh();
+    } else {
+      toast("Thanks — feedback recorded", "success");
+    }
+    renderGrid(m, locId, includeLow);
   } catch (e) {
-    if (e.status === 403) toast("Please complete the verification first", "error");
+    if (e.status === 403) toast(verifyFailMessage(), "error");
     else if (e.status === 429) toast("You already rated this photo", "error");
     else toast("Couldn't record your rating", "error");
   }
@@ -198,13 +263,25 @@ function openUpload(locId) {
   m.querySelector(".ph-submit").onclick = async (e) => {
     const file = m.querySelector(".ph-file").files[0];
     if (!file) { toast("Choose a photo first", "error"); return; }
+    const MAX_UPLOAD_BYTES = 6_000_000; // mirror of backend settings.image_max_bytes (413 stays source of truth)
+    if (file.size > MAX_UPLOAD_BYTES) {
+      toast("Image too large (max ~6 MB) — pick a smaller photo", "error");
+      return; // fail fast instead of uploading multi-MB over LTE only to 413
+    }
+    const btn = e.currentTarget;
     try {
-      await guard(tsHost, e.currentTarget, { action: "upload" }, (token) => uploadImage(locId, file, token, null));
+      await guard(tsHost, btn, { action: "upload" }, (token) => {
+        // Token is minted; the multi-MB POST is the slow part — relabel so the button isn't stuck
+        // on "Verifying…". guard() restores the original label in its finally.
+        btn.textContent = "Uploading…";
+        return uploadImage(locId, file, token, null);
+      });
       toast("Photo uploaded — it appears once the community confirms it", "success");
       closeModal();
     } catch (err) {
-      if (err.status === 403) toast("Please complete the verification", "error");
+      if (err.status === 403) toast(verifyFailMessage(), "error");
       else if (err.status === 413) toast("Image too large (max ~6 MB)", "error");
+      else if (err.status === 507) toast("Photo storage is temporarily full — please try again later", "error");
       else if (err.status === 422) toast("Unsupported image type", "error");
       else if (err.status === 429) toast("Daily upload limit reached", "error");
       else toast("Upload failed — try again", "error");

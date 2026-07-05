@@ -4,11 +4,11 @@
 // engagement-tier threshold (migration 0009). Text fields carry no GPS weight, so each voice is 1.
 
 import { fetchOrgs, postFieldCorrection, voteFieldCorrection } from "./api.js";
-import { esc, orgTypeLabel } from "./confidence.js";
+import { esc, orgTypeLabel, supportLine } from "./confidence.js";
 import { ORG_TYPE_LABELS, ORG_TYPES } from "./config.js";
 import { app } from "./state.js";
 import { toast } from "./toast.js";
-import { guard } from "./turnstile.js";
+import { guard, verifyFailMessage } from "./turnstile.js";
 
 const FIELDS = [
   { key: "name", label: "Name" },
@@ -35,20 +35,17 @@ export function mountFieldEdits(host, d) {
   const open = d.open_field_corrections || [];
   if (!open.length) { host.innerHTML = ""; return; }
   host.innerHTML = `<div class="po-fixes">
-    <div class="po-fixes-t">Detail changes proposed</div>
-    ${open.map((c) => {
-      const left = Math.max(0, c.required_support - c.support);
-      return `<div class="po-fix" data-cid="${c.id}">
+    <div class="po-fixes-t"><span class="help-tip" tabindex="0" role="img" aria-label="How community proposals work" data-tip="A neighbor suggested this change. If it looks correct, vote &quot;Looks right&quot; to help it go live — it applies once enough people confirm. If it's wrong, vote &quot;Not right.&quot;">?</span>Changes Proposed by the Community</div>
+    ${open.map((c) => `<div class="po-fix" data-cid="${c.id}">
         <div class="fix-what">${describe(c)}</div>
-        ${c.note ? `<div class="fix-note">“${esc(c.note)}”</div>` : ""}
-        <div class="fix-meter">${left > 0 ? `needs ${left} more` : "ready"} · ${c.support}/${c.required_support}</div>
+        ${c.note ? `<div class="fix-note">"${esc(c.note)}"</div>` : ""}
+        <div class="fix-meter">${supportLine(c.support, c.required_support)}</div>
         <div class="ts fix-ts"></div>
         <div class="fix-btns">
           <button class="btn tiny confirm" type="button">Looks right</button>
-          <button class="btn tiny deny" type="button">No</button>
+          <button class="btn tiny deny" type="button">Not right</button>
         </div>
-      </div>`;
-    }).join("")}
+      </div>`).join("")}
   </div>`;
 
   host.querySelectorAll(".po-fix").forEach((row) => {
@@ -61,20 +58,18 @@ export function mountFieldEdits(host, d) {
         if (res.applied) {
           toast("Updated — thank you!", "success");
           app.refresh();
-          app.map.closePopup();
+          app.closePanel?.();
         } else if (res.status === "rejected") {
-          toast("Thanks — suggestion dismissed", "success");
+          toast("Vote recorded", "info");
           row.remove();
         } else {
-          const left = Math.max(0, res.required_support - res.support);
-          row.querySelector(".fix-meter").textContent =
-            `${left > 0 ? `needs ${left} more` : "ready"} · ${res.support}/${res.required_support}`;
-          toast("Thanks — recorded", "success");
+          row.querySelector(".fix-meter").textContent = supportLine(res.support, res.required_support);
+          toast("Vote recorded — thank you", "success");
         }
       } catch (e) {
         if (e.status === 409 && e.error?.code === "self_vote") toast("You can't vote on your own suggestion", "info");
         else if (e.status === 409) toast("That suggestion is already closed", "info");
-        else if (e.status === 403) toast("Please complete the verification", "error");
+        else if (e.status === 403) toast(verifyFailMessage(), "error");
         else toast("Couldn't record your vote", "error");
       }
     };
@@ -106,7 +101,8 @@ export function startFieldEdit(d) {
   sheet = document.createElement("div");
   sheet.className = "pin-sheet";
   sheet.setAttribute("role", "dialog");
-  sheet.setAttribute("aria-modal", "true");
+  // Not aria-modal: no focus trap here (the sheet's DOM is rebuilt on every tab switch, so a
+  // Tab-wrap trap would risk trapping onto a hidden/stale node) — keep role=dialog + label.
   sheet.setAttribute("aria-label", "Suggest a detail change");
   sheet.innerHTML = `
     <div class="sheet-card">
@@ -132,9 +128,53 @@ export function startFieldEdit(d) {
   const inputHost = sheet.querySelector(".fe-input");
   const tsHost = sheet.querySelector(".sheet-ts");
 
+  // Draft state per field, preserved across tab switches. Previously renderInput() rebuilt each
+  // tab from the location's CURRENT values, silently discarding anything already typed on it —
+  // switch Name -> Type -> Name and your new name was gone.
+  const draft = {
+    name: d.name || "",
+    org_type: d.org_type,
+    org_name: d.org_name || "",
+    address: { ...(d.address || {}) },
+  };
+
+  function captureDraft() {
+    if (field === "name") {
+      const el = sheet.querySelector("#fe-name");
+      if (el) draft.name = el.value;
+    } else if (field === "org_type") {
+      const el = sheet.querySelector("#fe-type");
+      if (el) draft.org_type = el.value;
+    } else if (field === "org_name") {
+      const sel = sheet.querySelector("#fe-org");
+      if (sel) draft.org_name = sel.value === "__new__"
+        ? (sheet.querySelector("#fe-org-new").value || "") : sel.value;
+    } else {
+      const g = (id) => (sheet.querySelector(id) ? sheet.querySelector(id).value : "");
+      draft.address = { line: g("#fe-line"), city: g("#fe-city"),
+                        state: g("#fe-state"), postal_code: g("#fe-zip") };
+    }
+  }
+
+  // A dot on any tab whose draft differs from the live value — edits stay visible across tabs.
+  function isDirty(key) {
+    if (key === "name") return draft.name !== (d.name || "");
+    if (key === "org_type") return draft.org_type !== d.org_type;
+    if (key === "org_name") return draft.org_name !== (d.org_name || "");
+    const a = d.address || {};
+    const b = draft.address || {};
+    return ["line", "city", "state", "postal_code"].some((k) => (b[k] || "") !== (a[k] || ""));
+  }
+
+  function updateTabDots() {
+    sheet.querySelectorAll(".fe-seg button").forEach((b) => {
+      b.classList.toggle("dirty", isDirty(b.dataset.field));
+    });
+  }
+
   function renderOrgInput() {
     const opts = orgCache || [];
-    const cur = d.org_name || "";
+    const cur = draft.org_name || "";
     const inList = !!cur && opts.includes(cur);
     inputHost.innerHTML = `<label class="fe-l" for="fe-org">Whose donation bin / drive is this?</label>
       <select id="fe-org" class="fe-text">
@@ -154,15 +194,15 @@ export function startFieldEdit(d) {
   function renderInput() {
     if (field === "name") {
       inputHost.innerHTML = `<label class="fe-l" for="fe-name">New name</label>
-        <input id="fe-name" class="fe-text" maxlength="200" value="${esc(d.name || "")}" />`;
+        <input id="fe-name" class="fe-text" maxlength="200" value="${esc(draft.name)}" />`;
     } else if (field === "org_type") {
       inputHost.innerHTML = `<label class="fe-l" for="fe-type">Type</label>
         <select id="fe-type" class="fe-text">${ORG_TYPES.map((t) =>
-          `<option value="${t}" ${t === d.org_type ? "selected" : ""}>${esc(ORG_TYPE_LABELS[t])}</option>`).join("")}</select>`;
+          `<option value="${t}" ${t === draft.org_type ? "selected" : ""}>${esc(ORG_TYPE_LABELS[t])}</option>`).join("")}</select>`;
     } else if (field === "org_name") {
       renderOrgInput();
     } else {
-      const a = d.address || {};
+      const a = draft.address || {};
       inputHost.innerHTML = `
         <label class="fe-l" for="fe-line">Street address</label>
         <input id="fe-line" class="fe-text" value="${esc(a.line || "")}" placeholder="123 Main St" />
@@ -175,14 +215,19 @@ export function startFieldEdit(d) {
   }
 
   async function ensureOrgs() {
-    if (orgCache) return;
-    orgCache = await fetchOrgs();
+    // Only cache a non-empty result: fetchOrgs() returns [] on BOTH error and a genuinely empty list,
+    // so caching [] would freeze a transient failure for the whole session (dropdown stuck on
+    // "+ Add a new org…"). Cost of a retry when the list is truly empty is one cheap re-fetch.
+    if (orgCache && orgCache.length) return;
+    const orgs = await fetchOrgs();
+    if (orgs.length) orgCache = orgs;
   }
 
   renderInput();
 
   sheet.querySelectorAll(".fe-seg button").forEach((b) => {
     b.onclick = async () => {
+      captureDraft(); // preserve whatever was typed on the tab being left
       field = b.dataset.field;
       sheet.querySelectorAll(".fe-seg button").forEach((x) => {
         const on = x === b;
@@ -191,6 +236,7 @@ export function startFieldEdit(d) {
       });
       if (field === "org_name") await ensureOrgs();
       renderInput();
+      updateTabDots();
     };
   });
 
@@ -245,7 +291,7 @@ export function startFieldEdit(d) {
       else if (err.status === 422) toast(err.error?.message || "That value can't be used", "error");
       else if (err.status === 409) toast("You already proposed a change to this field", "info");
       else if (err.status === 429) toast("You've hit today's suggestion limit — try again tomorrow", "error");
-      else if (err.status === 403) toast("Please complete the verification", "error");
+      else if (err.status === 403) toast(verifyFailMessage(), "error");
       else if (err.status === 404) { toast("That location is no longer available", "error"); teardown(); }
       else toast("Couldn't submit the change — please try again", "error");
     }

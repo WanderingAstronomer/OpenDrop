@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from pipeline.common import brand_key, name_sim, normalize_house_number
 
@@ -23,7 +23,7 @@ _POINT = "ST_SetSRID(ST_MakePoint(%s, %s), 4326)"  # args: (lon, lat)
 
 @router.get("/locations")
 async def list_locations(bbox: str, types: str | None = None,
-                         min_confidence: float = 0.0, cluster: str = "auto"):
+                         min_confidence: float = Query(0.0, ge=0, le=100), cluster: str = "auto"):
     try:
         west, south, east, north = (float(x) for x in bbox.split(","))
     except Exception:  # noqa: BLE001
@@ -42,19 +42,30 @@ async def list_locations(bbox: str, types: str | None = None,
         params.append(type_list)
 
     async with db.pool.connection() as conn:
-        cur = await conn.execute(f"SELECT count(*) AS n FROM locations WHERE {where}", params)
-        total = (await cur.fetchone())["n"]
-
         if cluster == "off":
             use_points = True
         elif cluster == "on":
             use_points = False
         else:
-            use_points = total <= settings.point_cap
+            # We only need to know whether the in-bbox active set EXCEEDS point_cap, not the exact
+            # total, so cap the scan at point_cap+1 rows. The map polls this on every pan/zoom; an
+            # unbounded count(*) over the (national) active set on each call is needless DB load.
+            cur = await conn.execute(
+                f"SELECT count(*) AS n FROM (SELECT 1 FROM locations WHERE {where} LIMIT %s) t",
+                params + [settings.point_cap + 1])
+            use_points = (await cur.fetchone())["n"] <= settings.point_cap
 
         if use_points:
+            # has_pending: any OPEN community proposal (pin move or detail change) awaiting
+            # confirmations — the map pulses these so contributors can find spots needing a vote.
+            # Both EXISTS probes ride the partial *_open_ix indexes.
             cur = await conn.execute(
-                f"""SELECT id, name, org_type, confidence, ST_X(geom) AS lon, ST_Y(geom) AS lat
+                f"""SELECT id, name, org_type, confidence, ST_X(geom) AS lon, ST_Y(geom) AS lat,
+                           (EXISTS (SELECT 1 FROM location_corrections c
+                                     WHERE c.location_id = locations.id AND c.status = 'open')
+                            OR EXISTS (SELECT 1 FROM field_corrections f
+                                        WHERE f.location_id = locations.id AND f.status = 'open')
+                           ) AS has_pending
                     FROM locations WHERE {where} LIMIT %s""",
                 params + [settings.point_cap],
             )
@@ -65,7 +76,8 @@ async def list_locations(bbox: str, types: str | None = None,
                     "type": "Feature",
                     "geometry": {"type": "Point", "coordinates": [r["lon"], r["lat"]]},
                     "properties": {"id": r["id"], "name": r["name"], "org_type": r["org_type"],
-                                   "confidence": conf, "bucket": bucket(conf)},
+                                   "confidence": conf, "bucket": bucket(conf),
+                                   "has_pending": bool(r["has_pending"])},
                 })
             return {"mode": "points", "type": "FeatureCollection", "features": features}
 
@@ -254,6 +266,18 @@ async def submit_location(body: SubmitIn, request: Request):
         location_id = None
         now_active = False
         async with conn.transaction():
+            # Serialize the per-IP daily cap with the write: the earlier count (Step 1) is a cheap
+            # pre-geocode reject, but it releases its connection and an external geocode happens
+            # before we get here, so a concurrent burst from one IP could otherwise all pass it. Take
+            # a per-IP advisory lock and re-check the cap authoritatively inside the write txn.
+            await conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (iph,))
+            cur = await conn.execute(
+                "SELECT count(*) AS n FROM pending_locations "
+                "WHERE submitter_ip_hash = %s AND created_at > now() - interval '1 day'",
+                (iph,),
+            )
+            if (await cur.fetchone())["n"] >= settings.submit_per_ip_per_day:
+                raise HTTPException(429, {"code": "submit_cooldown", "message": "daily submission limit reached"})
             if coords:
                 lat, lon = coords
                 cur = await conn.execute(

@@ -29,7 +29,11 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "${API_PORT:-8000}:8000"
+      # Bind to LOOPBACK ONLY. The API trusts X-Real-IP from its proxy, and nginx (service `web`)
+      # reaches it over the internal docker network regardless of this publish. Exposing it on a
+      # routable interface would let a direct client forge X-Real-IP and defeat every per-IP limit,
+      # so the host publish is for local debugging only. The prod overlay drops it entirely.
+      - "127.0.0.1:${API_PORT:-8000}:8000"
     volumes:
       - media:/app/media               # uploaded photos (written by the API)
     restart: unless-stopped

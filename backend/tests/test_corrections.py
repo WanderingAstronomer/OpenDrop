@@ -331,6 +331,112 @@ def test_attribute_rate_limit(conn, client):
         settings.attributes_per_ip_per_day = orig
 
 
+@requires_db
+def test_attributes_batch_save_and_clear(conn, client):
+    """The rate-form's single Save: one call carries every touched rating (value=null retracts).
+    One Turnstile token, one request — instead of one request per tap."""
+    loc = _mk_location(conn, "attr batch")
+    ip = "203.0.88.1"
+    r = client.post(f"/api/locations/{loc}/attributes",
+                    json={"ratings": [{"attribute": "safety", "value": 3},
+                                      {"attribute": "condition", "value": 2},
+                                      {"attribute": "bins", "value": 4}],
+                          "turnstile_token": TOK},
+                    headers={"X-Real-IP": ip})
+    assert r.status_code == 200, r.text
+    agg = r.json()["attributes"]
+    assert agg["safety"]["count"] == 1 and agg["safety"]["avg"] == 3.0
+    assert agg["condition"]["count"] == 1
+    assert agg["bins"]["count"] == 1
+
+    # Second batch: retract safety (null), refine condition; bins untouched stays.
+    r2 = client.post(f"/api/locations/{loc}/attributes",
+                     json={"ratings": [{"attribute": "safety", "value": None},
+                                       {"attribute": "condition", "value": 1}],
+                           "turnstile_token": TOK},
+                     headers={"X-Real-IP": ip})
+    assert r2.status_code == 200, r2.text
+    agg2 = r2.json()["attributes"]
+    assert "safety" not in agg2 or agg2["safety"]["count"] == 0     # retracted
+    assert agg2["condition"]["avg"] == 1.0                          # overwritten
+    assert agg2["bins"]["count"] == 1                               # untouched
+
+
+@requires_db
+def test_attributes_batch_validation(conn, client):
+    loc = _mk_location(conn, "attr batch bad")
+    hdr = {"X-Real-IP": "203.0.88.2"}
+    # duplicate attribute in one batch
+    dup = client.post(f"/api/locations/{loc}/attributes",
+                      json={"ratings": [{"attribute": "safety", "value": 1},
+                                        {"attribute": "safety", "value": 2}],
+                            "turnstile_token": TOK}, headers=hdr)
+    assert dup.status_code == 422 and dup.json()["error"]["code"] == "bad_request"
+    # per-attribute max enforced inside the batch (safety is 1..3)
+    over = client.post(f"/api/locations/{loc}/attributes",
+                       json={"ratings": [{"attribute": "safety", "value": 4}],
+                             "turnstile_token": TOK}, headers=hdr)
+    assert over.status_code == 422 and over.json()["error"]["code"] == "bad_value"
+    # empty batch / neither accepted shape
+    empty = client.post(f"/api/locations/{loc}/attributes",
+                        json={"ratings": [], "turnstile_token": TOK}, headers=hdr)
+    assert empty.status_code == 422
+    neither = client.post(f"/api/locations/{loc}/attributes",
+                          json={"turnstile_token": TOK}, headers=hdr)
+    assert neither.status_code == 422
+
+
+@requires_db
+def test_attributes_batch_cap_counts_every_new_pair(conn, client):
+    """A batch that would create more new (location, attribute) pairs than the daily cap allows is
+    rejected atomically — batching must not become a cap bypass."""
+    from app.config import settings
+    from app.security import ip_hash
+    loc = _mk_location(conn, "attr batch cap")
+    ip = "203.0.88.3"
+    conn.execute("DELETE FROM attribute_votes WHERE ip_hash = %s", (ip_hash(ip),))
+    conn.commit()
+    orig = settings.attributes_per_ip_per_day
+    settings.attributes_per_ip_per_day = 2
+    try:
+        r = client.post(f"/api/locations/{loc}/attributes",
+                        json={"ratings": [{"attribute": "safety", "value": 1},
+                                          {"attribute": "condition", "value": 1},
+                                          {"attribute": "bins", "value": 1}],
+                              "turnstile_token": TOK},
+                        headers={"X-Real-IP": ip})
+        assert r.status_code == 429 and r.json()["error"]["code"] == "attribute_cooldown"
+        ok = client.post(f"/api/locations/{loc}/attributes",
+                         json={"ratings": [{"attribute": "safety", "value": 1},
+                                           {"attribute": "condition", "value": 1}],
+                               "turnstile_token": TOK},
+                         headers={"X-Real-IP": ip})
+        assert ok.status_code == 200, ok.text
+    finally:
+        settings.attributes_per_ip_per_day = orig
+
+
+# --- pending-proposal flag on map points ------------------------------------
+@requires_db
+def test_points_carry_has_pending_flag(conn, client):
+    """Map points expose has_pending when a location has an OPEN community proposal, so the
+    frontend can pulse spots that need confirmations. Authoritatively-sourced locations gate lone
+    renames (0010), so the proposal below stays open rather than auto-applying."""
+    lat, lon = 40.60, -82.60
+    with_open = _mk_location(conn, "pending flag on", lat=lat, lon=lon)
+    without = _mk_location(conn, "pending flag off", lat=lat + 0.01, lon=lon + 0.01)
+    r = client.post(f"/api/locations/{with_open}/field-corrections",
+                    json={"field": "name", "value": "Better Bin Name", "turnstile_token": TOK},
+                    headers={"X-Real-IP": "203.0.99.1"})
+    assert r.status_code == 200 and r.json()["applied"] is False, r.text
+
+    pts = client.get(f"/api/locations?bbox={lon-0.05},{lat-0.05},{lon+0.06},{lat+0.06}&cluster=off")
+    assert pts.status_code == 200
+    props = {f["properties"]["id"]: f["properties"] for f in pts.json()["features"]}
+    assert props[with_open]["has_pending"] is True
+    assert props[without]["has_pending"] is False
+
+
 # --- Drop-a-pin submission --------------------------------------------------
 @requires_db
 @pytest.mark.owner_only  # endpoint works as app role; the DELETE self-clean below needs the owner

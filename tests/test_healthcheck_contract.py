@@ -48,7 +48,9 @@ def test_api_healthcheck_hits_a_real_route_on_the_listener_port():
     # The 8000 the healthcheck probes must equal every other place the API port is declared.
     assert re.search(r"^EXPOSE\s+8000\b", DOCKERFILE, re.M), "Dockerfile must EXPOSE 8000"
     assert re.search(r'--port",\s*"8000"', DOCKERFILE), "uvicorn CMD must bind --port 8000"
-    api_container_port = re.search(r'"\$\{API_PORT:-\d+\}:(\d+)"', COMPOSE)
+    # The publish may carry an optional host-IP prefix (we bind to 127.0.0.1 so the dev-published
+    # API port is loopback-only, not routable); the CONTAINER side must still be 8000.
+    api_container_port = re.search(r'"(?:[\d.]+:)?\$\{API_PORT:-\d+\}:(\d+)"', COMPOSE)
     assert api_container_port and api_container_port.group(1) == "8000", (
         "compose api service must map to container port 8000"
     )

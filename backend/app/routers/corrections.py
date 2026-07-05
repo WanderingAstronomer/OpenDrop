@@ -66,27 +66,31 @@ async def propose_correction(loc_id: int, body: CorrectionIn, request: Request):
                             "for a larger move, add a new location or report this one as gone"),
                 "details": {"distance_m": round(dist), "max_m": settings.correction_max_move_m}})
 
-        cur = await conn.execute(
-            "SELECT count(*) AS n FROM location_corrections "
-            "WHERE submitter_ip_hash = %s AND created_at > now() - interval '1 day'", (iph,))
-        if (await cur.fetchone())["n"] >= settings.corrections_per_ip_per_day:
-            raise HTTPException(429, {"code": "correction_cooldown", "message": "daily correction limit reached"})
-
         if body.image_id is not None:
             cur = await conn.execute(
                 "SELECT 1 FROM location_images WHERE id = %s AND location_id = %s", (body.image_id, loc_id))
             if await cur.fetchone() is None:
                 raise HTTPException(422, {"code": "bad_image", "message": "image does not belong to this location"})
 
-        # Insert fires the after-insert trigger, which may auto-apply (Cold good-faith).
-        cur = await conn.execute(
-            """INSERT INTO location_corrections
-               (location_id, suggested_lat, suggested_lon, note, image_id,
-                submitter_ip_hash, turnstile_hash, gps_corroborated)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-            (loc_id, body.suggested_lat, body.suggested_lon, body.note, body.image_id,
-             iph, thash, body.gps_corroborated))
-        corr_id = (await cur.fetchone())["id"]
+        # Serialize the per-IP daily cap with the insert: the count+insert run under a per-IP advisory
+        # lock inside one transaction, so a concurrent burst from one IP can't all read n<cap and each
+        # slip a row past the limit (the check-then-act race the vote endpoint already guards against).
+        async with conn.transaction():
+            await conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (iph,))
+            cur = await conn.execute(
+                "SELECT count(*) AS n FROM location_corrections "
+                "WHERE submitter_ip_hash = %s AND created_at > now() - interval '1 day'", (iph,))
+            if (await cur.fetchone())["n"] >= settings.corrections_per_ip_per_day:
+                raise HTTPException(429, {"code": "correction_cooldown", "message": "daily correction limit reached"})
+            # Insert fires the after-insert trigger, which may auto-apply (Cold good-faith).
+            cur = await conn.execute(
+                """INSERT INTO location_corrections
+                   (location_id, suggested_lat, suggested_lon, note, image_id,
+                    submitter_ip_hash, turnstile_hash, gps_corroborated)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                (loc_id, body.suggested_lat, body.suggested_lon, body.note, body.image_id,
+                 iph, thash, body.gps_corroborated))
+            corr_id = (await cur.fetchone())["id"]
         c = await _correction_state(conn, corr_id)
 
     return {"correction_id": corr_id, **c}
@@ -133,16 +137,37 @@ async def vote_correction(corr_id: int, body: CorrectionVoteIn, request: Request
 @router.post("/locations/{loc_id}/attributes")
 async def rate_attribute(loc_id: int, body: AttributeIn, request: Request):
     """Rate perceived safety / bin condition / number of bins. One rating per attribute per
-    person; re-rating overwrites. Returns the updated aggregates."""
+    person; re-rating overwrites. Accepts a single {attribute, value} (legacy) or a batched
+    {ratings:[{attribute, value|null}, ...]} — the rate-form's single Save submits all touched
+    ratings in ONE call/token instead of one call per tap; a null value retracts the caller's own
+    rating for that attribute. Returns the updated aggregates."""
     ip = client_ip(request)
     if not await verify_turnstile(body.turnstile_token, ip):
         raise HTTPException(403, {"code": "turnstile_failed", "message": "Turnstile verification failed"})
-    if body.value > ATTRIBUTE_MAX[body.attribute]:
-        raise HTTPException(422, {"code": "bad_value",
-                                  "message": f"{body.attribute} value must be 1..{ATTRIBUTE_MAX[body.attribute]}"})
+
+    # Normalize both accepted shapes into one list of (attribute, value-or-None) operations.
+    if body.ratings is not None:
+        ops = [(r.attribute, r.value) for r in body.ratings]
+    elif body.attribute is not None and body.value is not None:
+        ops = [(body.attribute, body.value)]
+    else:
+        raise HTTPException(422, {"code": "bad_request",
+                                  "message": "provide attribute+value, or ratings=[...]"})
+    if not ops:
+        raise HTTPException(422, {"code": "bad_request", "message": "ratings is empty"})
+    seen: set[str] = set()
+    for attr, val in ops:
+        if attr in seen:
+            raise HTTPException(422, {"code": "bad_request", "message": f"duplicate attribute {attr}"})
+        seen.add(attr)
+        if val is not None and val > ATTRIBUTE_MAX[attr]:
+            raise HTTPException(422, {"code": "bad_value",
+                                      "message": f"{attr} value must be 1..{ATTRIBUTE_MAX[attr]}"})
 
     iph = ip_hash(ip)
     thash = token_hash(body.turnstile_token)
+    sets = [(a, v) for a, v in ops if v is not None]
+    clears = [a for a, v in ops if v is None]
 
     async with db.pool.connection() as conn:
         cur = await conn.execute("SELECT 1 FROM locations WHERE id = %s AND status <> 'merged'", (loc_id,))
@@ -152,23 +177,36 @@ async def rate_attribute(loc_id: int, body: AttributeIn, request: Request):
         # Per-IP-per-day cap, parity with every other community write path. Only NEW
         # (location, attribute) pairs count — refining a rating you already left is an UPDATE and
         # is always allowed, so the cap bounds how many distinct spots one IP can rate, never how
-        # often they correct a single rating.
-        cur = await conn.execute(
-            "SELECT 1 FROM attribute_votes WHERE location_id = %s AND ip_hash = %s AND attribute = %s",
-            (loc_id, iph, body.attribute))
-        if await cur.fetchone() is None:
-            cur = await conn.execute(
-                "SELECT count(*) AS n FROM attribute_votes "
-                "WHERE ip_hash = %s AND updated_at > now() - interval '1 day'", (iph,))
-            if (await cur.fetchone())["n"] >= settings.attributes_per_ip_per_day:
-                raise HTTPException(429, {"code": "attribute_cooldown", "message": "daily rating limit reached"})
+        # often they correct a single rating. A batch counts each new pair it would create.
+        # The count and the writes run under one per-IP advisory lock so a concurrent burst can't
+        # slip extra new pairs past the cap (the check-then-act race).
+        async with conn.transaction():
+            await conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (iph,))
+            new_pairs = 0
+            for attr, _ in sets:
+                cur = await conn.execute(
+                    "SELECT 1 FROM attribute_votes WHERE location_id = %s AND ip_hash = %s AND attribute = %s",
+                    (loc_id, iph, attr))
+                if await cur.fetchone() is None:
+                    new_pairs += 1
+            if new_pairs:
+                cur = await conn.execute(
+                    "SELECT count(*) AS n FROM attribute_votes "
+                    "WHERE ip_hash = %s AND updated_at > now() - interval '1 day'", (iph,))
+                if (await cur.fetchone())["n"] + new_pairs > settings.attributes_per_ip_per_day:
+                    raise HTTPException(429, {"code": "attribute_cooldown", "message": "daily rating limit reached"})
 
-        await conn.execute(
-            """INSERT INTO attribute_votes (location_id, ip_hash, attribute, value, turnstile_hash)
-               VALUES (%s,%s,%s,%s,%s)
-               ON CONFLICT (location_id, ip_hash, attribute) DO UPDATE
-                 SET value = EXCLUDED.value, turnstile_hash = EXCLUDED.turnstile_hash, updated_at = now()""",
-            (loc_id, iph, body.attribute, body.value, thash))
+            for attr, val in sets:
+                await conn.execute(
+                    """INSERT INTO attribute_votes (location_id, ip_hash, attribute, value, turnstile_hash)
+                       VALUES (%s,%s,%s,%s,%s)
+                       ON CONFLICT (location_id, ip_hash, attribute) DO UPDATE
+                         SET value = EXCLUDED.value, turnstile_hash = EXCLUDED.turnstile_hash, updated_at = now()""",
+                    (loc_id, iph, attr, val, thash))
+            for attr in clears:
+                await conn.execute(
+                    "DELETE FROM attribute_votes WHERE location_id = %s AND ip_hash = %s AND attribute = %s",
+                    (loc_id, iph, attr))
         attributes = await attribute_aggregates(conn, loc_id)
 
     return {"id": loc_id, "attributes": attributes}
@@ -269,29 +307,34 @@ async def propose_field_correction(loc_id: int, body: FieldCorrectionIn, request
         if nochange:
             raise HTTPException(422, {"code": "no_change", "message": "that's already the current value"})
 
-        # One open proposal per (location, field) per person (the partial unique index backs this).
-        cur = await conn.execute(
-            "SELECT 1 FROM field_corrections WHERE location_id = %s AND field = %s "
-            "AND submitter_ip_hash = %s AND status = 'open' LIMIT 1", (loc_id, field, iph))
-        if await cur.fetchone() is not None:
-            raise HTTPException(409, {"code": "duplicate_proposal",
-                                      "message": "you already have an open proposal for this field"})
+        # Serialize the duplicate-proposal check, the per-IP daily cap, and the insert under one
+        # per-IP advisory lock, so concurrent requests from one IP can't race past either guard
+        # (the partial unique index field_corrections_one_open is the DB backstop for the former).
+        async with conn.transaction():
+            await conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (iph,))
+            # One open proposal per (location, field) per person.
+            cur = await conn.execute(
+                "SELECT 1 FROM field_corrections WHERE location_id = %s AND field = %s "
+                "AND submitter_ip_hash = %s AND status = 'open' LIMIT 1", (loc_id, field, iph))
+            if await cur.fetchone() is not None:
+                raise HTTPException(409, {"code": "duplicate_proposal",
+                                          "message": "you already have an open proposal for this field"})
 
-        # Per-IP-per-day cap, parity with pin corrections.
-        cur = await conn.execute(
-            "SELECT count(*) AS n FROM field_corrections "
-            "WHERE submitter_ip_hash = %s AND created_at > now() - interval '1 day'", (iph,))
-        if (await cur.fetchone())["n"] >= settings.corrections_per_ip_per_day:
-            raise HTTPException(429, {"code": "correction_cooldown", "message": "daily correction limit reached"})
+            # Per-IP-per-day cap, parity with pin corrections.
+            cur = await conn.execute(
+                "SELECT count(*) AS n FROM field_corrections "
+                "WHERE submitter_ip_hash = %s AND created_at > now() - interval '1 day'", (iph,))
+            if (await cur.fetchone())["n"] >= settings.corrections_per_ip_per_day:
+                raise HTTPException(429, {"code": "correction_cooldown", "message": "daily correction limit reached"})
 
-        # Insert fires the after-insert trigger, which may auto-apply (Cold good-faith).
-        cur = await conn.execute(
-            """INSERT INTO field_corrections
-               (location_id, field, proposed_value, proposed_line, proposed_city,
-                proposed_state, proposed_postal, note, submitter_ip_hash, turnstile_hash)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-            (loc_id, field, pv, line, city, state, postal, body.note, iph, thash))
-        corr_id = (await cur.fetchone())["id"]
+            # Insert fires the after-insert trigger, which may auto-apply (Cold good-faith).
+            cur = await conn.execute(
+                """INSERT INTO field_corrections
+                   (location_id, field, proposed_value, proposed_line, proposed_city,
+                    proposed_state, proposed_postal, note, submitter_ip_hash, turnstile_hash)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                (loc_id, field, pv, line, city, state, postal, body.note, iph, thash))
+            corr_id = (await cur.fetchone())["id"]
         c = await _field_correction_state(conn, corr_id)
 
     return {"correction_id": corr_id, **c}

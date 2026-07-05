@@ -71,11 +71,15 @@ async def report_location(loc_id: int, body: ReportIn, request: Request):
         cur = await conn.execute("SELECT 1 FROM locations WHERE id = %s AND status <> 'merged'", (loc_id,))
         if await cur.fetchone() is None:
             raise HTTPException(404, {"code": "not_found", "message": "location not found"})
-        await _rate_limit_reports(conn, iph)
-        await conn.execute(
-            """INSERT INTO content_reports (target_type, target_id, reason, reporter_ip_hash, turnstile_hash)
-               VALUES ('location', %s, %s, %s, %s)""",
-            (loc_id, (body.reason or "").strip() or None, iph, thash))
+        # Serialize the per-reporter daily cap with the insert (per-IP advisory lock) so a concurrent
+        # burst from one reporter can't slip past reports_per_ip_per_day.
+        async with conn.transaction():
+            await conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (iph,))
+            await _rate_limit_reports(conn, iph)
+            await conn.execute(
+                """INSERT INTO content_reports (target_type, target_id, reason, reporter_ip_hash, turnstile_hash)
+                   VALUES ('location', %s, %s, %s, %s)""",
+                (loc_id, (body.reason or "").strip() or None, iph, thash))
     return {"ok": True, "target": "location", "target_id": loc_id, "hidden": False}
 
 
@@ -95,6 +99,9 @@ async def report_image(img_id: int, body: ReportIn, request: Request):
     hidden = False
     async with db.pool.connection() as conn:
         async with conn.transaction():
+            # Per-reporter advisory lock FIRST (before the image row lock), so the per-reporter daily
+            # cap is serialized across reports against DIFFERENT images too, not just this one.
+            await conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (iph,))
             cur = await conn.execute(
                 "SELECT removed_at FROM location_images WHERE id = %s FOR UPDATE", (img_id,))
             img = await cur.fetchone()

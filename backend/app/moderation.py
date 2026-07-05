@@ -17,8 +17,16 @@ import re
 from .config import settings
 
 _URL = re.compile(r"https?://|www\.", re.IGNORECASE)
-_EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+# Bounded quantifiers so the match cost is linear in the input — the old `[^@\s]+@[^@\s]+\.[^@\s]+`
+# backtracked quadratically on a long no-match string, a ReDoS lever on any screened field. The
+# local-part/domain length caps here comfortably cover every real email while removing the runaway.
+_EMAIL = re.compile(r"[^@\s]{1,64}@[^@\s]{1,255}\.[^@\s]{2,24}")
 _CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+# Hard ceiling applied inside _scan before any regex runs. Every caller already bounds its fields
+# (name <=200, notes/reasons <=500, address parts <=200 via the Pydantic models), so this is a
+# defense-in-depth backstop that keeps regex cost bounded even if some future caller forgets to cap.
+_MAX_SCAN_LEN = 600
 
 # Baked-in floor. Unambiguous slurs / profanity / spam-scam markers only. Lowercase, substring match.
 _DEFAULT_DENYLIST: frozenset[str] = frozenset({
@@ -40,6 +48,8 @@ def _denylist() -> set[str]:
 
 def _scan(field: str, deny: set[str]) -> str | None:
     """Objective abuse checks on one text field. None => clean."""
+    if len(field) > _MAX_SCAN_LEN:
+        return "Text is too long."
     if _CTRL.search(field):
         return "Text contains invalid control characters."
     if _URL.search(field):

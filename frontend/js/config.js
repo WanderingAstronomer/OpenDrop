@@ -2,7 +2,7 @@ export const API = "/api";
 // National fallback view (geographic center of the contiguous US). The map normally fits itself
 // to the live data's coverage bbox from /api/meta; this is only used when coverage is unavailable
 // or so wide (whole US) that a fixed national frame reads better than a zoomed-out fitBounds.
-export const DEFAULT_VIEW = { center: [39.5, -98.0], zoom: 4 };
+export const DEFAULT_VIEW = { center: [39.83, -98.58], zoom: 4 }; // Lebanon, KS — CONUS geographic center
 export const MIN_ZOOM = 3; // allow zooming out to the full US (incl. AK/HI), not past the continent
 
 export const BUCKET_COLORS = { high: "#1a9850", medium: "#f1a340", low: "#d73027" };

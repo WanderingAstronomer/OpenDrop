@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # The migration this image's code expects to be present. At boot the API checks schema_migrations
     # for this row: in prod it REFUSES to start if missing (blocks 'new code vs old schema' drift);
     # in dev it only warns. Bump this whenever a new migration is required by the code.
-    expected_schema_version: str = "0011_closure_safety_exhaustive_and_erosion.sql"
+    expected_schema_version: str = "0012_photo_correction_parity_and_bounds.sql"
     # Extra comma-separated words rejected in submissions, MERGED with the baked-in default
     # denylist (moderation._DEFAULT_DENYLIST). Operators extend, they don't replace.
     content_denylist: str = ""
@@ -66,6 +66,24 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
+    def insecure_default_warnings(self) -> list[str]:
+        """Non-fatal warnings about insecure defaults, surfaced at boot in ANY environment.
+
+        assert_production_secrets() only fires when APP_ENV=prod, so a deploy that forgets to set
+        APP_ENV=prod (the base compose publishes the API directly and defaults app_env to 'dev')
+        would otherwise come up silently with the default salt + Cloudflare TEST key. These warnings
+        make that state loud in the logs regardless of APP_ENV."""
+        w: list[str] = []
+        if self.ip_hash_salt in ("", "change-me-in-prod"):
+            w.append("IP_HASH_SALT is the default — anonymized ip_hashes become reversible")
+        if self.turnstile_secret.startswith(("1x0000", "2x0000", "3x0000")):
+            w.append("TURNSTILE_SECRET is a Cloudflare TEST key — bot protection is disabled")
+        if ":opendrop@" in self.database_url:
+            w.append("DATABASE_URL uses the default 'opendrop' password")
+        if not self.operator_token:
+            w.append("OPERATOR_TOKEN is empty — the moderation/admin surface is disabled (all /admin 404)")
+        return w
+
     def assert_production_secrets(self) -> None:
         """In APP_ENV=prod, refuse to boot with known-insecure defaults. No-op in dev."""
         if self.app_env.lower() != "prod":
@@ -77,6 +95,11 @@ class Settings(BaseSettings):
             problems.append("TURNSTILE_SECRET is a Cloudflare TEST key (bot protection disabled)")
         if ":opendrop@" in self.database_url:
             problems.append("DATABASE_URL still uses the default 'opendrop' password")
+        # A SET-but-weak operator token is worse than none: the /admin surface is live and guessable.
+        # An EMPTY token means the surface is intentionally disabled (a documented posture), so that
+        # is only a warning (insecure_default_warnings), not a boot failure.
+        if self.operator_token and len(self.operator_token) < 16:
+            problems.append("OPERATOR_TOKEN is set but shorter than 16 chars (guessable admin token)")
         if problems:
             raise RuntimeError(
                 "Refusing to start in production with insecure defaults:\n  - " + "\n  - ".join(problems)

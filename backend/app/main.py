@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 
 from . import db
 from .config import settings
-from .routers import corrections, images, locations, meta, moderation, votes
+from .routers import corrections, images, locations, meta, moderation, stats, votes
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("opendrop")
@@ -40,6 +40,8 @@ async def _assert_schema_at_head() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    for warning in settings.insecure_default_warnings():  # loud in ANY env, even before the prod guard
+        log.warning("INSECURE DEFAULT: %s", warning)
     settings.assert_production_secrets()  # refuse to boot in prod with default secrets
     await db.open_pool()
     await _assert_schema_at_head()
@@ -114,3 +116,4 @@ app.include_router(votes.router, prefix="/api")
 app.include_router(images.router, prefix="/api")
 app.include_router(corrections.router, prefix="/api")
 app.include_router(moderation.router, prefix="/api")
+app.include_router(stats.router, prefix="/api")

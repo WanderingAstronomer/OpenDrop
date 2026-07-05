@@ -34,6 +34,13 @@
   --low: #d73027;
   --high-soft: #e7f5ec;
   --low-soft: #fdecea;
+  /* Legend caption TEXT needs 4.5:1 on the white legend surface; the vivid --high/--medium above
+     are too light for 12.5px bold words (2.6–3.7:1), so captions use deeper on-white variants that
+     still read green/orange/red. The bar swatches keep the vivid tokens. Dark theme overrides these
+     back to the bright tokens (which already pass on the dark surface). */
+  --cap-high: #15803d;
+  --cap-medium: #b45309;
+  --cap-low: #c62828;
 
   /* elevation */
   --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.08);
@@ -45,6 +52,19 @@
   --r-input: 10px;
   --r-pill: 999px;
   --focus: 0 0 0 3px rgba(43, 108, 176, 0.35);
+
+  /* type scale — the ONLY five sizes used in un-zoomed overlays (popover, sheets, modals).
+     16px on all form fields kills iOS Safari's focus-zoom. Zoomed chrome keeps authored sizes. */
+  --fs-caption: 13px;
+  --fs-small: 14px;
+  --fs-body: 16px;
+  --fs-h3: 18px;
+  --fs-title: 21px;
+
+  /* toasts */
+  --toast-bg: #2a3640;
+  --toast-ok: #1a7f4b;
+  --toast-err: #b03030;
 }
 
 :root[data-theme="dark"] {
@@ -73,20 +93,41 @@
   --low: #ef6a5d;
   --high-soft: #143425;
   --low-soft: #3a1f1d;
+  --cap-high: var(--high);
+  --cap-medium: var(--medium);
+  --cap-low: var(--low);
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow: 0 10px 32px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.45);
 
   --focus: 0 0 0 3px rgba(74, 146, 216, 0.45);
+
+  --toast-bg: #0e1418;
+  --toast-ok: #17693f;
+  --toast-err: #9c2b2b;
 }
 
 * { box-sizing: border-box; }
 html, body {
-  margin: 0; height: 100%;
+  margin: 0; height: 100%; overflow: hidden;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color: var(--ink); background: var(--map-base);
 }
+/* body is the containing block for the absolute overlay panels (below). The place/list panels sit
+   translated 100% OFF the right/left edge when closed; contained by this position:relative +
+   overflow:hidden body, that off-canvas box is CLIPPED instead of extending the document's
+   scrollable width — which is what produced a horizontal scrollbar and a "phantom sidebar" strip of
+   dead map space that only vanished while a panel was open. Absolutely-positioned children do not
+   expand their containing block, so body stays viewport-width and the panels still dock flush. */
+body { position: relative; }
 #map { position: absolute; inset: 0; background: var(--map-base); }
+
+/* Screen-reader-only text (page h1, search live region). Both class names resolve to one rule so
+   markup can use either; new markup standardizes on .sr-only. */
+.sr-only, .visually-hidden {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+}
 
 :focus-visible { outline: none; box-shadow: var(--focus); border-radius: 6px; }
 
@@ -105,12 +146,35 @@ html, body {
 .btn.ghost { background: var(--surface); border-color: var(--border); color: var(--ink); }
 .btn.ghost:hover { background: var(--surface-2); border-color: var(--border-2); }
 .btn.tiny { padding: 6px 10px; font-size: 12.5px; border-radius: 8px; }
+/* quiet = borderless text button for utility rows; danger is quiet-red, never filled red */
+.btn.quiet { background: none; border-color: transparent; color: var(--accent); }
+.btn.quiet:hover { background: var(--accent-soft); }
+.btn.danger { background: none; border-color: var(--border); color: var(--low); }
+.btn.danger:hover { background: var(--low-soft); border-color: var(--low); }
+.btn.quiet.danger { border-color: transparent; }
+@media (pointer: coarse) {
+  .btn, .btn.tiny { min-height: 44px; }
+  .search-results li, .list-item { min-height: 44px; }
+  /* Report chips / remove links to a comfortable 44px. (search-clear must beat its own base rule,
+     so it lives in the MOBILE COMPAT section at the end of the file.) */
+  .chip, .rate-clear, .linklike { min-height: 44px; display: inline-flex; align-items: center; }
+}
+.sheet-x, .list-close, .modal-close { width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border-radius: 8px; }
+.sheet-x:hover, .list-close:hover, .modal-close:hover { color: var(--ink); background: var(--surface-2); }
+.sheet-gps input, .ph-low input { width: 20px; height: 20px; accent-color: var(--accent); }
+.seg button:focus-visible { box-shadow: var(--focus); }
+.seg button.on:focus-visible, .seg button.chosen:focus-visible { box-shadow: var(--focus), var(--shadow-sm); }
 
 /* ---- shared inputs ------------------------------------------------------- */
 label { display: block; font-size: 12px; margin: 10px 0 3px; color: var(--ink-2); font-weight: 600; }
 input, select, textarea {
-  width: 100%; padding: 9px 11px; font-size: 14px; color: var(--ink);
+  width: 100%; padding: 9px 11px; font-size: var(--fs-body); color: var(--ink);
   background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--r-input);
+}
+/* Inside the 1.25x-zoomed desktop panel, 13px authored = 16.25px effective — keeps the token scale
+   without double-scaling. (Phones un-zoom the panel, so they get the full 16px.) */
+@media (min-width: 481px) {
+  .panel input, .panel select { font-size: 13px; }
 }
 input::placeholder { color: var(--ink-3); }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus); }
@@ -123,21 +187,79 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 }
 .seg button.on, .seg button.chosen { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
 
-/* ---- lazy Turnstile host: takes space only once a widget is live ---------- */
-.ts:not(.ts-live) { display: none; }
+/* ---- lazy Turnstile host: takes space only once a widget is live ----------
+   (collapsed via max-height, not display:none, so the arrival can animate — see the
+   "Turnstile arrival" rules further down) */
 .ts.ts-live { margin: 8px 0; min-height: 62px; }
+
+/* ============================ UI SCALE ==================================== */
+/* Whole-chrome enlargement uses the CSS `zoom` property (standardized; Baseline since May 2024,
+   Firefox 126+). Unlike transform:scale it participates in layout, so hit targets and stacking
+   scale correctly. CRITICAL: zoom is applied ONLY to chrome that floats over the map — NEVER to
+   #map, its ancestors, or anything Leaflet position-computes inside .leaflet-map-pane (popups/
+   markers), where scaling breaks coordinate math (Leaflet #2795). Inside a zoomed subtree every
+   used length INCLUDING vw/vh is multiplied by the factor, so viewport-derived formulas below are
+   pre-divided by it. Full-height drawers/modals (.list-panel, .photo-modal, .pin-sheet) are
+   excluded (inset-anchored boxes don't zoom cleanly) and get explicit font bumps instead. */
+.leaflet-control-container, .map-ctl-bl, .map-ctl-br, .map-status, .toast-host, .panel { zoom: 1.25; }
+
+/* Keyboard focus rings for the chrome buttons: their box-shadow declarations out-cascade the
+   global :focus-visible rule, so restore the ring explicitly (ring stacked over the elevation). */
+.locate-btn:focus-visible, .add-btn:focus-visible, .list-toggle:focus-visible,
+.icon-btn:focus-visible, .list-close:focus-visible { box-shadow: var(--focus), var(--shadow); }
+
+/* Phones: the zoomed submit panel's content box would drop below Cloudflare Turnstile's hard
+   300px minimum width and clip the widget in the Add flow — un-zoom it there. */
+@media (max-width: 480px) {
+  /* un-zoom the Add panel on phones; its width/height/padding are set in MOBILE COMPAT (end of file)
+     because the base .panel rule is defined later and would otherwise win the cascade. */
+  .panel { zoom: 1; }
+}
+
+/* Below ~900px even the 1.3x search bar can graze the always-expanded basemap card in the
+   top-right — drop to the original 1x there. */
+@media (max-width: 900px) {
+  .search { zoom: 1; width: min(400px, calc(100vw - 130px)); }
+  .search-results { max-height: 50vh; }
+}
+
+/* Very narrow screens: keep the bottom-left legend and bottom-right button stack from colliding. */
+@media (max-width: 420px) {
+  .map-ctl-bl, .map-ctl-br { zoom: 1.1; }
+}
 
 /* ============================ MAP CHROME ================================== */
 
 /* Bottom-left control stack (legend + List/theme buttons) */
-.map-ctl-bl { position: absolute; bottom: 22px; left: 12px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+/* buttons row sits ABOVE the legend and stretches to the legend's (wider) width */
+/* bottom:52 (was 22) lifts the whole stack so the legend clears the map attribution strip on
+   short/half-height windows, where they used to overlap. */
+.map-ctl-bl { position: absolute; bottom: 52px; left: 12px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
 .ctl-row { display: flex; gap: 8px; }
+.ctl-row .list-toggle { flex: 1; }
 .legend {
   background: var(--surface); color: var(--ink); padding: 11px 13px; border-radius: var(--r-ctl);
-  box-shadow: var(--shadow); border: 1px solid var(--border); font-size: 13px; line-height: 1.7;
+  box-shadow: var(--shadow); border: 1px solid var(--border); font-size: 14px; line-height: 1.7;
+  text-align: center;
 }
-.legend strong { display: block; font-size: 15px; margin-bottom: 5px; color: var(--brand); }
-.legend-row { display: flex; align-items: center; gap: 7px; }
+.legend { min-width: 210px; }
+.legend strong { display: block; font-size: 17px; margin-bottom: 5px; color: var(--brand); white-space: nowrap; }
+.legend-row { display: flex; align-items: center; justify-content: center; gap: 7px; }
+
+/* Horizontal confidence scale: three color bars with a colored word centered under each. Colors
+   track the marker palette (--high/--medium/--low) so the legend reads as the map's key. */
+/* grid with three equal 1fr tracks => the bars are exactly the same length regardless of label
+   width; each label is centered within its own track, directly under its bar. */
+.conf-scale { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 9px 2px 3px; }
+.conf-col { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.conf-bar { width: 100%; height: 7px; border-radius: 4px; }
+.conf-bar.low { background: var(--low); }
+.conf-bar.medium { background: var(--medium); }
+.conf-bar.high { background: var(--high); }
+.conf-cap { font-size: 12px; font-weight: 700; line-height: 1; white-space: nowrap; }
+.conf-cap.low { color: var(--cap-low); }
+.conf-cap.medium { color: var(--cap-medium); }
+.conf-cap.high { color: var(--cap-high); }
 
 .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1px solid var(--surface); box-shadow: 0 0 0 1px rgba(0, 0, 0, .12); }
 /* Legend swatches are pinned to the fixed marker palette (BUCKET_COLORS in config.js)
@@ -155,16 +277,79 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .icon-btn { padding: 8px 11px; font-size: 16px; line-height: 1; }
 .theme-toggle { font-size: 17px; }
 
+/* Brand logo — top-left corner (icon + "OpenDrop" wordmark, 2:1), on a dark card that matches the
+   List/legend chrome so it reads on the light basemap. Hidden below 900px, where the centered
+   search bar would collide with it (the app title still lives in the browser tab there). */
+.brand {
+  position: absolute; top: 12px; left: 12px; z-index: 1000; line-height: 0;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-ctl); box-shadow: var(--shadow); padding: 7px 12px;
+}
+.brand-logo { display: block; height: 84px; width: auto; }
+/* wide wordmark lockup — hide where the centered search bar would reach it (desktop-first) */
+@media (max-width: 1219px) { .brand { display: none; } }
+
+/* Bottom-right chrome stack: locate button above the Add CTA, right-aligned, reflowing together */
+.map-ctl-br {
+  position: absolute; right: 16px; bottom: 24px; z-index: 1000;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+}
+
 /* Add button (primary CTA) */
 .add-btn {
-  position: absolute; right: 16px; bottom: 24px; z-index: 1000;
   background: var(--accent); color: var(--on-accent); border: none; border-radius: var(--r-pill);
   padding: 13px 20px; font-size: 15px; font-weight: 700; cursor: pointer; box-shadow: var(--shadow);
 }
 .add-btn:hover { background: var(--accent-hover); }
 
-/* Search box (top-center) */
-.search { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1200; width: min(400px, calc(100vw - 130px)); }
+/* "Show my location" — 46px circular target (WCAG 2.5.5 AAA / Apple HIG ≥44px), icon centered,
+   themed via CSS variables in both light and dark. */
+.locate-btn {
+  position: relative; width: 46px; height: 46px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface); color: var(--accent); border: 1px solid var(--border);
+  box-shadow: var(--shadow); cursor: pointer; padding: 0;
+  transition: background .15s, color .15s, border-color .15s, transform .15s;
+}
+/* hover:hover only — on touch, :hover sticks after a tap, leaving the button enlarged with its
+   tooltip lingering until the next tap elsewhere. */
+@media (hover: hover) {
+  .locate-btn:hover { background: var(--accent-soft); border-color: var(--accent); transform: scale(1.08); }
+}
+.locate-btn:active { transform: scale(0.96); }
+.locate-btn svg { display: block; }
+.locate-btn.busy svg { animation: odc-spin 1s linear infinite; }
+@keyframes odc-spin { to { transform: rotate(360deg); } }
+@keyframes odc-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* Theme-aware tooltip (the native title attribute can't be styled and is invisible to keyboard/
+   touch users — MDN's guidance is a custom tooltip; aria-label carries the accessible name). */
+.locate-btn::after {
+  content: attr(data-tooltip);
+  position: absolute; right: calc(100% + 10px); top: 50%; transform: translateY(-50%);
+  background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm); border-radius: 8px; padding: 6px 10px;
+  font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  opacity: 0; pointer-events: none; transition: opacity .15s;
+}
+.locate-btn:focus-visible::after { opacity: 1; }
+@media (hover: hover) { .locate-btn:hover::after { opacity: 1; } }
+
+/* Search box (top-center) — scaled 1.3x (owner-tuned down from an initial 1.75: "25% smaller").
+   The vw term is pre-divided by the zoom factor (see UI SCALE note) so it never overflows. */
+.search { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1200;
+  zoom: 1.3; width: min(400px, calc((100vw - 130px) / 1.3)); }
+/* the clear button centers on the INPUT (not the whole search wrapper, which grows with the
+   results list) — hence the .search-field positioning context around just the input + button */
+.search-field { position: relative; }
+.search-field input { padding-right: 40px; }
+.search-clear {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  width: 16px; height: 16px; border-radius: 50%; padding: 0;
+  border: none; background: var(--surface-3); color: var(--ink-2); font-size: 9px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.search-clear:hover { background: var(--surface-2); color: var(--ink); }
 .search input {
   width: 100%; padding: 11px 16px; border: 1px solid var(--border); border-radius: var(--r-pill);
   font-size: 14px; box-shadow: var(--shadow); background: var(--surface); color: var(--ink);
@@ -172,7 +357,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .search input:focus { border-color: var(--accent); box-shadow: var(--focus), var(--shadow); }
 .search-results {
   list-style: none; margin: 6px 0 0; padding: 5px; background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--r-ctl); box-shadow: var(--shadow); max-height: 50vh; overflow-y: auto;
+  border-radius: var(--r-ctl); box-shadow: var(--shadow); max-height: calc(50vh / 1.3); overflow-y: auto;
 }
 .search-results:empty { display: none; }
 .search-results li { padding: 9px 11px; border-radius: 8px; font-size: 13px; cursor: pointer; color: var(--ink); }
@@ -183,14 +368,11 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 
 /* Loading / empty / error banner */
 .map-status {
-  position: absolute; top: 64px; left: 50%; transform: translateX(-50%); z-index: 1100;
+  position: absolute; top: 84px; left: 50%; transform: translateX(-50%); z-index: 1100; /* clears the 1.75x search */
   background: rgba(16, 24, 40, 0.92); color: #fff; padding: 9px 16px; border-radius: var(--r-pill);
-  font-size: 13px; box-shadow: var(--shadow); max-width: 80vw; text-align: center;
+  font-size: 13px; box-shadow: var(--shadow); max-width: calc(80vw / 1.25); text-align: center;
 }
 .map-status[hidden] { display: none; }
-
-/* Locate control glyph */
-.odc-locate { font-size: 18px; font-weight: 700; line-height: 26px; text-align: center; color: var(--accent); }
 
 /* Cluster icon */
 .odc-cluster {
@@ -199,6 +381,19 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
   border: 2px solid #ffffff; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
 }
 .odc-cluster:hover { filter: brightness(1.1); }
+/* National-view AK / HI / CONUS totals — bolder than ordinary grid bubbles */
+.odc-cluster.odc-region { background: var(--accent); font-size: 15px; font-weight: 800; }
+
+/* A pin with an OPEN community proposal (pin move / detail change) awaiting confirmations —
+   a gentle stroke pulse so contributors can spot spots that need a vote. */
+/* a pin with an OPEN community proposal: SAME ring weight as every other pin (2px), just recolored
+   violet with a gentle pulsing glow — distinct against light, detailed, AND satellite basemaps
+   without being visually heavier than its neighbors. */
+.odc-pending { stroke: #a855f7 !important; stroke-width: 2 !important; animation: odc-need-vote 1.6s ease-in-out infinite; }
+@keyframes odc-need-vote {
+  0%, 100% { filter: drop-shadow(0 0 0.5px rgba(168, 85, 247, 0.55)); }
+  50% { filter: drop-shadow(0 0 4px rgba(168, 85, 247, 0.95)); }
+}
 
 /* Drag-pin tooltip */
 .pin-tip { font-weight: 600; }
@@ -210,26 +405,38 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 }
 /* margin:0 so our own .popover padding controls spacing — but DON'T touch width:
    Leaflet sets an inline width here to honour the popup's minWidth/maxWidth. */
-.po-popup .leaflet-popup-content { margin: 0; }
+.po-popup .leaflet-popup-content { margin: 0; max-height: min(68vh, 540px); display: flex; }
 .po-popup .leaflet-popup-tip { background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); }
-.po-popup .leaflet-popup-close-button { color: var(--ink-3); padding: 8px 9px 0 0; }
-.po-popup .leaflet-popup-close-button:hover { color: var(--ink); }
+/* 40x40 close target; the header reserves clearance for it */
+.po-popup .leaflet-popup-close-button {
+  width: 40px; height: 40px; top: 4px; right: 4px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; line-height: 1; color: var(--ink-3); border-radius: var(--r-input);
+}
+.po-popup .leaflet-popup-close-button:hover { color: var(--ink); background: var(--surface-2); }
+.po-popup .leaflet-popup-close-button:focus-visible { box-shadow: var(--focus); }
 
-.popover { padding: 14px 16px; }
-.po-head { padding-right: 14px; margin-bottom: 10px; }
-.po-title { margin: 0; font-size: 17px; font-weight: 700; line-height: 1.25; color: var(--ink); }
-.po-sub { color: var(--ink-2); font-size: 12.5px; margin-top: 3px; }
+/* Popovers live inside Leaflet's map pane, where the chrome `zoom` must not apply (it would break
+   popup anchoring) — so the +25% UI scale is delivered here as explicit font bumps instead.
+   Header stays pinned; .po-body scrolls inside the height-capped popup. */
+.popover { display: flex; flex-direction: column; min-height: 0; padding: 16px 18px; }
+.po-head { padding-right: 36px; margin-bottom: 10px; }
+.po-skel { font-size: var(--fs-body); color: var(--ink-2); padding: 10px 4px; min-width: 220px; }
+.po-meta { display: flex; flex-direction: column; gap: 6px; }
+.po-directions { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; text-decoration: none; }
+.po-title { margin: 0; font-size: 21px; font-weight: 700; line-height: 1.25; color: var(--ink); }
+.po-sub { color: var(--ink-2); font-size: 15px; margin-top: 3px; }
 
-.po-body { display: flex; flex-direction: column; gap: 9px; }
-.po-row { display: flex; gap: 8px; font-size: 13px; line-height: 1.45; color: var(--ink); }
-.po-ic { flex: none; width: 16px; text-align: center; }
-.po-links { display: flex; gap: 14px; font-size: 13px; }
+.po-body { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; min-height: 0; overscroll-behavior: contain; padding-right: 2px; }
+.po-row { display: flex; gap: 8px; font-size: 16px; line-height: 1.45; color: var(--ink); }
+.po-ic { flex: none; width: 18px; text-align: center; }
+.po-links { display: flex; gap: 14px; font-size: 16px; }
 .po-links a { color: var(--accent); text-decoration: none; font-weight: 600; }
 .po-links a:hover { text-decoration: underline; }
 
 .po-conf {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 9px 11px; background: var(--surface-2); border-radius: var(--r-input); font-size: 12.5px;
+  padding: 10px 12px; background: var(--surface-2); border-radius: var(--r-input); font-size: 15px;
 }
 .conf-label { font-weight: 700; }
 .conf-score {
@@ -238,61 +445,78 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 }
 .conf-tally { margin-left: auto; color: var(--ink-2); white-space: nowrap; }
 
-/* divider between sections */
-.vote-area, .corrections-area:not(:empty), .fieldedits-area:not(:empty), .signals-area, .photos-area, .po-foot {
-  border-top: 1px solid var(--border); padding-top: 10px; margin-top: 1px;
+/* divider between sections — one consistent rhythm */
+.vote-area, .corrections-area:not(:empty), .fieldedits-area:not(:empty), .signals-area, .photos-area, .po-foot-wrap {
+  border-top: 1px solid var(--border); padding-top: 12px; margin-top: 2px;
 }
 .corrections-area:empty, .fieldedits-area:empty { display: none; }
 
-.vote-q { font-size: 12.5px; color: var(--ink-2); margin: 0 0 7px; font-weight: 600; }
+.vote-q { font-size: 15px; color: var(--ink-2); margin: 0 0 7px; font-weight: 600; }
+.popover .btn { font-size: 16px; padding: 11px 16px; }
+.popover .btn.tiny { font-size: 14px; padding: 7px 12px; }
 .vote-btns { display: flex; gap: 8px; }
-.vote-btns .btn { flex: 1; }
-.vote-btns .confirm:hover { background: var(--high-soft); border-color: var(--high); }
-.vote-btns .deny:hover { background: var(--low-soft); border-color: var(--low); }
+.vote-btns .btn { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+/* persistent semantic tints — touch users never see :hover */
+.vote-btns .confirm { background: var(--high-soft); border-color: var(--high); }
+.vote-btns .deny { background: var(--low-soft); border-color: var(--low); }
+.vote-done { font-size: var(--fs-small); font-weight: 600; color: var(--cap-high); padding: 6px 0; } /* --cap-high ~4.9:1 on white (--high was 3.72:1); dark aliases cap-high→high */
 
 /* pending pin-move suggestions */
-.po-fixes-t { font-size: 12.5px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+.po-fixes-t { font-size: 15px; font-weight: 700; color: var(--ink); margin: 0 0 6px; } /* margin-top:0 so the <h3> promotion adds no UA top-margin */
 .po-fix { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-input); padding: 9px 10px; margin-bottom: 6px; }
-.fix-note { font-size: 12.5px; font-style: italic; color: var(--ink); margin-bottom: 4px; }
-.fix-meter { font-size: 11.5px; color: var(--ink-2); margin-bottom: 6px; }
+.fix-note { font-size: 15px; font-style: italic; color: var(--ink); margin-bottom: 4px; }
+.fix-view { width: 100%; margin-bottom: 6px; }
+.fix-meter { font-size: var(--fs-small); color: var(--ink-2); margin-bottom: 6px; }
+.fix-bar { height: 4px; border-radius: 2px; background: var(--surface-3); overflow: hidden; margin-bottom: 5px; }
+.fix-bar span { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
 .fix-btns { display: flex; gap: 6px; }
-.fix-btns .btn { flex: 1; }
-.fix-btns .confirm:hover { background: var(--high-soft); border-color: var(--high); }
-.fix-btns .deny:hover { background: var(--low-soft); border-color: var(--low); }
+.fix-btns .btn { flex: 1; min-height: 44px; padding: 10px 12px; font-size: var(--fs-small); }
+/* persistent tints (confirm reads positive at rest; deny only goes red on intent) */
+.fix-btns .confirm { background: var(--high-soft); border: 1px solid var(--high); color: var(--cap-high); } /* --cap-high text ~4.9:1 on the soft tint (--high was 3.30:1) */
+.fix-btns .deny { background: var(--surface); border: 1px solid var(--border-2); color: var(--ink-2); }
+.fix-btns .deny:hover, .fix-btns .deny:active { background: var(--low-soft); border-color: var(--low); color: var(--low); }
+.fix-priv { font-size: var(--fs-caption); color: var(--ink-3); margin: 6px 0 0; line-height: 1.5; }
 
 /* community signals */
-.sig-title { font-size: 12.5px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+.sig-title { font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+.sig-none { margin: 0 0 4px; font-size: var(--fs-small); color: var(--ink-2); }
 .sig-rows { display: flex; flex-direction: column; gap: 5px; }
-.sig-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
-.sig-label { color: var(--ink); }
+.sig-row { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.sig-label { color: var(--ink); display: inline-flex; align-items: center; }
 .sig-data { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
-.sig-empty { color: var(--ink-3); font-style: italic; }
+.sig-empty { color: var(--ink-3); font-style: normal; }
 .sig-val { color: var(--ink); font-weight: 600; }
-.sig-n { background: var(--surface-3); border-radius: var(--r-pill); padding: 0 7px; font-size: 11px; min-width: 18px; text-align: center; }
+.sig-n { background: var(--surface-3); border-radius: var(--r-pill); text-align: center; }
+.sig-you { background: var(--accent-soft); color: var(--accent); border-radius: var(--r-pill); padding: 1px 8px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .sig-meter { display: inline-flex; gap: 3px; }
-.seg-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--surface-3); }
+.seg-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--border-2); }
 .seg-dot.on { background: var(--accent); }
 
-.sig-rate-toggle {
-  margin-top: 8px; background: none; border: none; color: var(--accent);
-  font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 2px 0;
-}
-.sig-rate-toggle:hover { text-decoration: underline; }
+.sig-rate-toggle { margin-top: 8px; }
 .sig-rate { margin-top: 8px; display: flex; flex-direction: column; gap: 9px; }
 /* The rate panel is collapsed via the `hidden` attribute until the toggle opens it.
    This class rule would otherwise out-cascade [hidden]'s display:none, so restore it. */
 .sig-rate[hidden] { display: none; }
+.rate-fields { border: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 9px; }
 .rate-grp { display: flex; flex-direction: column; gap: 5px; }
-.rate-l { font-size: 12px; color: var(--ink-2); font-weight: 600; }
-.stepper { display: flex; align-items: center; gap: 8px; }
-.stepper button { width: 32px; height: 32px; border: 1px solid var(--border-2); background: var(--surface); color: var(--ink); border-radius: 8px; font-size: 16px; cursor: pointer; padding: 0; }
-.stepper button:hover { background: var(--surface-2); }
-.stepper output { min-width: 30px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
-.stepper .bins-save { width: auto; padding: 0 14px; background: var(--accent); color: var(--on-accent); border-color: transparent; font-size: 13px; font-weight: 600; }
+.rate-l-row { display: flex; align-items: baseline; }
+.rate-l { color: var(--ink-2); font-weight: 600; display: inline-flex; align-items: center; }
+.rate-clear { margin-left: auto; background: none; border: none; color: var(--accent); font-size: 12px; font-weight: 600; cursor: pointer; padding: 2px 4px; }
+.rate-clear:hover { text-decoration: underline; }
+.seg button { padding: 10px 10px; min-height: 40px; font-size: var(--fs-small); }
+.seg button.chosen { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); font-weight: 700; }
+/* bins is now the same 4-across segmented control; tighten side padding so "Four+" fits */
+.seg-4 button { padding-left: 6px; padding-right: 6px; }
+/* Rate footer: optional Remove on its own centered row, then an equal-width Cancel | Save pair */
+.rate-foot { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.rate-foot .rate-remove { align-self: center; }
+.rate-foot-actions { display: flex; gap: 8px; }
+.rate-foot-actions .btn { flex: 1; }
 
-/* photos */
-.po-foot { display: flex; gap: 8px; }
-.po-foot .btn { flex: 1; }
+/* popover footer: quiet utility row, not button soup */
+.po-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.po-foot .btn { flex: 0 0 auto; }
+.po-foot-l { font-size: var(--fs-caption); color: var(--ink-3); margin-right: auto; }
 .ph-top img.ph-thumb { width: 100%; max-height: 130px; object-fit: cover; border-radius: var(--r-input); cursor: pointer; margin-bottom: 8px; }
 .ph-actions { display: flex; gap: 8px; }
 .ph-actions .btn { flex: 1; }
@@ -304,19 +528,25 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 }
 .sheet-card {
   pointer-events: auto; width: min(420px, 100%); background: var(--surface);
-  border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow); padding: 14px 16px;
+  border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow);
+  padding: 16px 18px; max-height: min(78vh, 620px); overflow-y: auto;
 }
+.sheet-card:focus-visible { box-shadow: var(--shadow); outline: none; }
 .sheet-head { display: flex; align-items: center; margin-bottom: 4px; }
-.sheet-head strong { font-size: 16px; flex: 1; }
-.sheet-x { background: none; border: none; font-size: 17px; cursor: pointer; color: var(--ink-3); padding: 2px 4px; }
-.sheet-x:hover { color: var(--ink); }
-.sheet-sub { margin: 0 0 6px; font-size: 13px; color: var(--ink-2); }
-.sheet-tier { margin: 0 0 10px; font-size: 12.5px; color: var(--ink); background: var(--accent-soft); border-radius: var(--r-input); padding: 8px 10px; }
+.sheet-head strong { font-size: var(--fs-h3); flex: 1; }
+.sheet-x { background: none; border: none; cursor: pointer; color: var(--ink-3); }
+.sheet-sub { margin: 0 0 6px; font-size: var(--fs-body); color: var(--ink-2); }
+.sheet-tier { margin: 0 0 10px; font-size: var(--fs-small); color: var(--ink); background: var(--accent-soft); border-radius: var(--r-input); padding: 10px 12px; }
+.sheet-card label { font-size: var(--fs-small); }
+.sheet-card input, .sheet-card select, .sheet-card textarea { font-size: var(--fs-body); padding: 11px 13px; }
+.sheet-card .btn { font-size: var(--fs-body); padding: 12px 16px; }
+.sheet-card .seg button { font-size: var(--fs-small); padding: 9px 12px; }
+.sheet-note { resize: vertical; min-height: 44px; font-family: inherit; }
 .sheet-note-l { margin-top: 0; }
 .opt { color: var(--ink-3); font-weight: 400; }
-.sheet-gps { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0 4px; font-size: 13px; color: var(--ink); font-weight: 500; cursor: pointer; }
-.sheet-gps input { width: auto; margin-top: 2px; }
-.sheet-priv { margin: 0 0 4px; font-size: 11.5px; color: var(--ink-3); line-height: 1.5; }
+.sheet-gps { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0 4px; font-size: var(--fs-body); color: var(--ink); font-weight: 500; cursor: pointer; }
+.sheet-gps input { width: 20px; margin-top: 2px; }
+.sheet-priv { margin: 0 0 4px; font-size: var(--fs-small); color: var(--ink-3); line-height: 1.5; }
 .sheet-actions { display: flex; gap: 8px; margin-top: 10px; }
 .sheet-actions .primary { flex: 1; }
 
@@ -332,13 +562,48 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .fe-org-new { margin-top: 6px; }
 .fix-what { font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
 
-/* "tap again to clear" hint under the rating controls */
-.rate-hint { font-size: 11.5px; color: var(--ink-3); margin: 0; }
+/* dirty-tab dot on the detail-change sheet (edits preserved across tabs) */
+.fe-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-left: 5px; vertical-align: 2px; }
+.fe-hint { font-size: var(--fs-small); color: var(--ink-3); margin: 4px 0 0; }
+.gps-status { display: block; font-size: var(--fs-small); margin: 2px 0 0 26px; color: var(--ink-2); }
+.gps-status.ok { color: var(--high); }
+
+/* inline form errors (submit panel) */
+.field-err { margin: 3px 0 0; font-size: 12.5px; color: var(--low); }
+input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--low); box-shadow: 0 0 0 3px var(--low-soft); }
+.pin-readout { font-size: 12.5px; color: var(--ink-2); margin: 6px 0 0; }
+
+/* report reason chips */
+.rep-label { font-size: 12.5px; margin: 6px 0 4px; }
+.rep-label .opt { color: var(--ink-3); font-weight: 400; }
+.rep-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--border-2); background: var(--surface); color: var(--ink-2); border-radius: var(--r-pill); padding: 6px 12px; font-size: 12.5px; cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+/* Turnstile arrival: caption + soft reflow so the challenge doesn't just pop in */
+.ts { overflow: hidden; max-height: 0; transition: max-height .2s ease; }
+.ts.ts-live { max-height: 120px; }
+.ts.ts-live::before { content: "Quick security check — takes a moment"; display: block; font-size: var(--fs-caption); color: var(--ink-2); margin-bottom: 4px; }
+
+/* report reasons are textareas now — user asked for room to explain */
+.po-report-reason, .ph-report-reason { resize: vertical; min-height: 60px; font-family: inherit; font-size: var(--fs-body); }
+
+/* token remaps for popover stragglers */
+.sig-rate-toggle, .rate-l, .po-report-hint, .fix-meter { font-size: var(--fs-small); }
+.sig-n { font-size: var(--fs-caption); padding: 1px 8px; min-width: 22px; }
+.po-title { font-size: var(--fs-title); }
+
+/* icon slots (SVG icon language — no emoji) */
+.po-ic { flex: none; width: 18px; display: inline-flex; justify-content: center; color: var(--ink-3); }
+.sig-ic { color: var(--ink-3); vertical-align: -2px; margin-right: 3px; flex: none; }
 
 /* ============================ SUBMIT PANEL ============================== */
+/* z ladder: chrome 1000-1100 < search 1200 < list 1300 < submit panel 1400 < pin sheet 1600
+   < photo modal 2000 < toast 2200 */
 .panel {
-  position: absolute; right: 16px; bottom: 80px; z-index: 1001; width: 340px; max-width: calc(100vw - 32px);
-  max-height: calc(100vh - 110px); overflow-y: auto;
+  position: absolute; right: 16px; bottom: 80px; z-index: 1400; width: 340px;
+  max-width: calc((100vw - 32px) / 1.25);
+  max-height: calc((100dvh - 110px) / 1.25); overflow-y: auto;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow); padding: 16px 18px;
 }
 .panel.hidden { display: none; }
@@ -352,33 +617,173 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 
 /* ============================ TOASTS ==================================== */
 .toast-host { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 2200; display: flex; flex-direction: column; gap: 8px; align-items: center; }
-.toast { background: #2a3640; color: #fff; padding: 11px 18px; border-radius: var(--r-pill); font-size: 13px; opacity: 0; transform: translateY(8px); transition: all .25s; box-shadow: var(--shadow); max-width: 90vw; text-align: center; }
+.toast { background: var(--toast-bg); color: #fff; padding: 11px 18px; border-radius: var(--r-pill); font-size: 13px; opacity: 0; transform: translateY(8px); transition: all .25s; box-shadow: var(--shadow); max-width: calc(90vw / 1.25); text-align: center; }
 .toast.show { opacity: 1; transform: translateY(0); }
-.toast.success { background: #1a7f4b; }
-.toast.error { background: #b03030; }
+.toast.success { background: var(--toast-ok); }
+.toast.error { background: var(--toast-err); }
+
+/* ============================ PLACE PANEL =============================== */
+/* The single location-details surface: desktop = 408px left dock (Google's own full-detail cap),
+   mobile = two-snap bottom sheet. Non-modal overlay — the map div NEVER resizes (no
+   invalidateSize churn); the camera offset-pans instead. Hidden panels leave the tab order via
+   visibility riding the transition (same pattern as .list-panel). */
+.place-panel {
+  /* absolute, contained by the position:relative + overflow:hidden <body>: body is the panel's
+     containing block, so it docks flush to the viewport edge AND its closed (translated 100%
+     off-screen) box is CLIPPED by body rather than extending the document's scrollable width — the
+     source of the horizontal scrollbar / phantom-sidebar dead space. (position:fixed instead
+     anchors to the ICB, which the off-canvas box keeps expanding to viewport+panel — a feedback
+     loop that mis-docks the panel to the wrong edge.) */
+  position: absolute; z-index: 1350; background: var(--surface); color: var(--ink);
+  display: flex; flex-direction: column;
+  visibility: hidden; transition: transform .2s ease, visibility 0s linear .2s;
+}
+.place-panel.open { visibility: visible; transition: transform .2s ease; }
+.pp-head { padding: 8px 14px 10px; border-bottom: 1px solid var(--border); background: var(--surface); flex: none; }
+.pp-head-row { display: flex; align-items: center; gap: 8px; }
+.pp-title { margin: 0; font-size: var(--fs-title); line-height: 1.2; flex: 1; outline: none; }
+.pp-sub { color: var(--ink-2); font-size: var(--fs-small); margin-top: 2px; }
+.pp-close {
+  width: 40px; height: 40px; flex: none; display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 8px; color: var(--ink-3); font-size: 18px; cursor: pointer;
+}
+.pp-close:hover { color: var(--ink); background: var(--surface-2); }
+.pp-body {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+  padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 12px;
+}
+.pp-photos:empty { display: none; }
+.pp-essentials { display: flex; flex-direction: column; gap: 10px; }
+/* The owner's T-sketch: one column at the 408px dock / phone widths; details|community columns
+   appear automatically wherever the panel is >=560px wide (tablet full-width sheet). */
+.pp-grid { container-type: inline-size; }
+.pp-grid { display: grid; gap: 12px; }
+.pp-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+@container (min-width: 560px) {
+  .pp-grid { grid-template-columns: 1fr 1fr; gap: 16px; }
+}
+/* selected-marker ring (SVG path stroke takes var() via CSS rules, unlike presentation attrs) */
+.marker-selected { stroke: var(--accent) !important; stroke-width: 3.5 !important; }
+
+/* desktop dock — RIGHT side, so it never covers the left-docked list (both can be open at once:
+   list on the left, this detail panel on the right). */
+@media (min-width: 768px) {
+  .place-panel {
+    top: 0; right: 0; bottom: 0; width: min(408px, calc(100vw - 56px));
+    border-left: 1px solid var(--border); box-shadow: var(--shadow);
+    transform: translateX(100%);
+  }
+  .place-panel.open { transform: translateX(0); }
+  .place-panel.open.collapsed { transform: translateX(100%); visibility: hidden; transition: transform .2s ease, visibility 0s linear .2s; }
+  .pp-grab { display: none; }
+  .pp-tab {
+    position: absolute; top: 50%; transform: translateY(-50%); z-index: 1349;
+    right: min(408px, calc(100vw - 56px));
+    width: 28px; height: 56px; border: 1px solid var(--border); border-right: none;
+    border-radius: 10px 0 0 10px; background: var(--surface); color: var(--ink-2);
+    font-size: 18px; cursor: pointer; box-shadow: var(--shadow-sm); padding: 0;
+    transition: right .2s ease;
+  }
+  .pp-tab[aria-expanded="false"] { right: 0; }
+  .pp-tab:hover { color: var(--ink); background: var(--surface-2); }
+}
+
+/* mobile two-snap sheet */
+@media (max-width: 767px) {
+  .place-panel {
+    left: 0; right: 0; bottom: 0;
+    height: calc(100dvh - 48px); /* dvh, not vh — 100vh sits under iOS Safari's toolbar */
+    border-top: 1px solid var(--border); border-radius: 16px 16px 0 0; box-shadow: var(--shadow);
+    transform: translateY(100%);
+  }
+  .place-panel.open.peek { transform: translateY(calc(70dvh - 48px)); } /* 30dvh visible */
+  .place-panel.open.full { transform: translateY(0); }
+  .place-panel.dragging { transition: none; }
+  .pp-head { touch-action: none; } /* the drag handle owns vertical gestures — don't let the page scroll steal them */
+  .place-panel:not(.full) .pp-body { overflow: hidden; } /* inner scroll only at FULL */
+  .pp-grab { display: block; width: 100%; height: 22px; background: none; border: none; cursor: grab; padding: 0; }
+  .pp-grab::before {
+    content: ""; display: block; width: 36px; height: 4px; border-radius: 2px;
+    background: var(--border-2); margin: 6px auto 0;
+  }
+  .pp-tab { display: none; }
+}
+
+/* ===== T26: overlay-panel chrome behavior ===== */
+/* Collapse-tab chevron: a single glyph that ROTATES 180° in sync with the .2s panel slide, instead
+   of the instant ‹/› text swap that teleported while the sidebar animated. Only the glyph rotates
+   (an inner span) — rotating the whole tab would flip its rounded edge away from the map. */
+.pp-chev { display: inline-block; transition: transform .2s ease; }
+.pp-tab.is-collapsed .pp-chev { transform: rotate(180deg); }
+
+/* Chrome slides clear of an open overlay panel so nothing important is covered (desktop dock only;
+   phones use bottom sheets). Corner stacks carry zoom:1.25 and the search zoom:1.3 (>900) / 1
+   (<=900), so viewport shifts are divided by the local zoom — the same pre-division used for widths
+   above. Panel width is 408 and list 420 throughout the dock range, so these resolve to a constant
+   visual slide. :not(.collapsed) so a collapsed (off-screen) panel releases the chrome. */
+@media (min-width: 768px) {
+  .map-ctl-bl, .map-ctl-br, .search { transition: transform .2s ease; }
+  body:has(.place-panel.open:not(.collapsed)) .map-ctl-br { transform: translateX(calc(min(408px, calc(100vw - 56px)) / -1.25)); }
+  body:has(.list-panel.open:not(.collapsed)) .map-ctl-bl { transform: translateX(calc(min(420px, 85vw) / 1.25)); }
+}
+@media (min-width: 768px) and (max-width: 900px) {
+  body:has(.place-panel.open:not(.collapsed)) .search { transform: translateX(-50%) translateX(calc(min(408px, calc(100vw - 56px)) / -2)); }
+  body:has(.list-panel.open:not(.collapsed)) .search { transform: translateX(-50%) translateX(calc(min(420px, 85vw) / 2)); }
+  body:has(.list-panel.open:not(.collapsed)):has(.place-panel.open:not(.collapsed)) .search { transform: translateX(-50%) translateX(calc((min(420px, 85vw) - min(408px, calc(100vw - 56px))) / 2)); }
+}
+@media (min-width: 901px) {
+  body:has(.place-panel.open:not(.collapsed)) .search { transform: translateX(-50%) translateX(calc(min(408px, calc(100vw - 56px)) / -2.6)); }
+  body:has(.list-panel.open:not(.collapsed)) .search { transform: translateX(-50%) translateX(calc(min(420px, 85vw) / 2.6)); }
+  body:has(.list-panel.open:not(.collapsed)):has(.place-panel.open:not(.collapsed)) .search { transform: translateX(-50%) translateX(calc((min(420px, 85vw) - min(408px, calc(100vw - 56px))) / 2.6)); }
+}
 
 /* ============================ LIST PANEL ================================ */
 .list-close { margin-left: 4px; background: none; border: none; font-size: 16px; cursor: pointer; color: var(--ink-2); padding: 2px 6px; border-radius: 6px; }
 .list-close:hover { color: var(--ink); background: var(--surface-3); }
 .list-panel {
-  position: absolute; top: 0; left: 0; bottom: 0; z-index: 1300; width: min(340px, 85vw);
+  position: absolute; top: 0; left: 0; bottom: 0; z-index: 1300; width: min(420px, 85vw);
   background: var(--surface); box-shadow: var(--shadow); border-right: 1px solid var(--border);
-  transform: translateX(-100%); transition: transform 0.2s ease; display: flex; flex-direction: column;
+  transform: translateX(-100%); display: flex; flex-direction: column;
+  /* visibility rides the transition so the CLOSED drawer's controls leave the tab order
+     (focusable content inside aria-hidden = focus lost off-screen) */
+  visibility: hidden; transition: transform 0.2s ease, visibility 0s linear 0.2s;
 }
-.list-panel.open { transform: translateX(0); }
+.list-panel.open { transform: translateX(0); visibility: visible; transition: transform 0.2s ease; }
+.list-panel.open.collapsed { transform: translateX(-100%); visibility: hidden; transition: transform .2s ease, visibility 0s linear .2s; }
+
+/* list edge tab — mirror of .pp-tab, on the list's RIGHT edge (desktop only); chevron rotates in
+   sync with the slide, same pattern as the detail panel's tab. */
+.list-chev { display: inline-block; transition: transform .2s ease; }
+.list-tab.is-collapsed .list-chev { transform: rotate(180deg); }
+@media (min-width: 768px) {
+  .list-tab {
+    position: absolute; top: 50%; transform: translateY(-50%); z-index: 1299;
+    left: min(420px, 85vw);
+    width: 28px; height: 56px; border: 1px solid var(--border); border-left: none;
+    border-radius: 0 10px 10px 0; background: var(--surface); color: var(--ink-2);
+    font-size: 18px; cursor: pointer; box-shadow: var(--shadow-sm); padding: 0;
+    transition: left .2s ease;
+  }
+  .list-tab[aria-expanded="false"] { left: 0; }  /* collapsed -> tab rides the left edge */
+  .list-tab:hover { color: var(--ink); background: var(--surface-2); }
+}
+@media (max-width: 767px) { .list-tab { display: none; } }
 .list-head { display: flex; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border); }
-.list-head label { margin: 0; font-size: 13px; color: var(--ink-2); }
-.list-head select { flex: 1; }
-.list-count { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.list-head label { margin: 0; font-size: 16px; color: var(--ink-2); }
+.list-head select { flex: 1; font-size: 16px; }
+.list-count { font-size: 14px; color: var(--ink-3); white-space: nowrap; }
 .list-results { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; }
-.list-empty { padding: 16px; color: var(--ink-3); font-size: 13px; text-align: center; }
+.list-empty { padding: 16px; color: var(--ink-3); font-size: 16px; text-align: center; }
 .list-item {
   display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
-  background: none; border: none; border-radius: 8px; padding: 9px 10px; cursor: pointer; font-size: 13px; color: var(--ink);
+  background: none; border: none; border-radius: 8px; padding: 11px 12px; cursor: pointer; font-size: 16px; color: var(--ink);
 }
-.list-item:hover, .list-item:focus { background: var(--accent-soft); outline: 2px solid var(--accent); outline-offset: -2px; }
+/* split hover from focus so mouse clicks don't leave a permanent outline on rows; hover:hover only
+   so a tapped row doesn't stay tinted on touch */
+@media (hover: hover) { .list-item:hover { background: var(--accent-soft); } }
+.list-item:focus-visible { background: var(--accent-soft); outline: 2px solid var(--accent); outline-offset: -2px; }
 .li-name { font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.li-type { color: var(--ink-3); font-size: 11.5px; white-space: nowrap; }
+.li-type { color: var(--ink-3); font-size: 13.5px; white-space: nowrap; }
 
 /* ============================ PHOTO MODAL ============================== */
 .photo-modal { position: absolute; inset: 0; z-index: 2000; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, .5); }
@@ -388,21 +793,42 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .modal-head strong { font-size: 16px; flex: 1; }
 .modal-close { background: none; border: none; font-size: 18px; cursor: pointer; color: var(--ink-2); }
 .modal-close:hover { color: var(--ink); }
-.ph-low { font-size: 12px; color: var(--ink-2); display: flex; align-items: center; gap: 4px; margin: 0; font-weight: 500; }
-.ph-low input { width: auto; }
+.ph-low { font-size: var(--fs-caption); color: var(--ink-2); display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 500; }
+.ph-low input { width: 20px; }
+.ph-low-sub { color: var(--ink-3); font-weight: 400; }
 .ph-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
-.ph-empty { color: var(--ink-3); font-size: 13px; text-align: center; padding: 20px; grid-column: 1 / -1; }
+/* single modal-level Turnstile host: the 300px widget can never fit a 150px grid cell */
+.ph-modal-ts.ts-live { position: sticky; bottom: 0; margin-top: 10px; padding: 8px 0; background: var(--surface); border-top: 1px solid var(--border); }
+.ph-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 28px 16px; grid-column: 1 / -1; }
+.ph-empty p { margin: 0; font-size: var(--fs-small); color: var(--ink); }
+.ph-empty-sub { font-size: 12.5px !important; color: var(--ink-3) !important; }
 .ph-card-item { border: 1px solid var(--border); border-radius: var(--r-input); overflow: hidden; background: var(--surface-2); }
 .ph-card-item img { width: 100%; height: 110px; object-fit: cover; display: block; }
 .ph-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; font-size: 11.5px; color: var(--ink); }
-.ph-score { margin-left: auto; color: var(--ink-2); }
-.ph-badge { background: var(--accent-soft); color: var(--accent); border-radius: var(--r-pill); padding: 1px 7px; font-size: 10.5px; }
-.ph-badge.low { background: var(--low-soft); color: var(--low); text-transform: capitalize; }
-.ph-ts { padding: 0 8px; }
-.ph-votes { display: flex; gap: 6px; padding: 6px 8px 8px; }
-.ph-votes .btn { flex: 1; }
-.ph-upload input[type="file"] { display: block; width: 100%; margin-bottom: 8px; font-size: 13px; }
+.ph-badge { background: var(--accent-soft); color: var(--accent); border-radius: var(--r-pill); padding: 1px 8px; font-size: 12px; font-weight: 600; }
+.ph-badge.low { background: var(--low-soft); color: var(--cap-low); } /* light theme ~5:1 (--low was 4.23:1); dark override below unchanged */
+:root[data-theme="dark"] .ph-badge { color: var(--accent-hover); }
+:root[data-theme="dark"] .ph-badge.low { color: #f4948a; }
+/* "You: …" and selected report chips: lift text off --accent-soft in dark theme (was ~4.07:1). */
+:root[data-theme="dark"] .sig-you,
+:root[data-theme="dark"] .chip[aria-pressed="true"] { color: var(--accent-hover); }
+.ph-votes { display: flex; align-items: center; gap: 6px; padding: 6px 8px 8px; }
+.ph-votes .btn { min-height: 40px; flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+.ph-votes .btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.linklike { background: none; border: none; padding: 6px 4px; font-size: 12px; color: var(--ink-3); cursor: pointer; margin-left: auto; }
+.linklike:hover { color: var(--low); text-decoration: underline; }
+/* upload drop zone + preview */
+.ph-drop { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 22px 12px; border: 2px dashed var(--border-2); border-radius: var(--r-input); color: var(--ink-2); cursor: pointer; text-align: center; }
+.ph-drop:hover, .ph-drop:focus-within { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.ph-drop-t { font-weight: 600; font-size: var(--fs-small); color: var(--ink); }
+.ph-drop-s { font-size: 12px; color: var(--ink-3); }
+.ph-preview img { width: 100%; max-height: 180px; object-fit: cover; border-radius: var(--r-input); }
+.ph-preview-name { font-size: 12px; color: var(--ink-2); }
+.ph-rule { margin: 8px 0 0; font-size: var(--fs-caption); font-weight: 600; color: var(--ink); }
 .ph-hint { font-size: 12.5px; color: var(--ink-2); background: var(--surface-2); border-radius: var(--r-input); padding: 9px 11px; }
+/* gallery entry points */
+.ph-thumb-btn { position: relative; display: block; width: 100%; padding: 0; border: 0; background: none; cursor: pointer; border-radius: var(--r-input); overflow: hidden; }
+.ph-count { position: absolute; right: 8px; bottom: 8px; font-size: var(--fs-caption); font-weight: 600; color: #fff; background: rgba(0, 0, 0, 0.6); border-radius: var(--r-pill); padding: 2px 9px; }
 .modal-actions { display: flex; gap: 8px; margin-top: 12px; }
 .modal-actions .primary { flex: 1; }
 img.ph-broken { object-fit: contain; background: var(--surface-2); }
@@ -413,7 +839,10 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
 .po-report:not(:empty) { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
 .po-report-hint { font-size: 12px; color: var(--ink-2); }
 .po-report-reason, .ph-report-reason {
-  width: 100%; box-sizing: border-box; padding: 7px 9px; font-size: 13px;
+  /* 16px (var(--fs-body)), not 13px: this textarea lives in the never-zoomed place/photo panels, so
+     a smaller size would trip iOS Safari's focus-zoom. (An earlier rule already sets --fs-body; this
+     duplicate used to silently override it back down to 13px.) */
+  width: 100%; box-sizing: border-box; padding: 7px 9px; font-size: var(--fs-body);
   border: 1px solid var(--border-2); border-radius: var(--r-input);
   background: var(--surface); color: var(--ink);
 }
@@ -433,7 +862,7 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
 .odc-basemaps .leaflet-control-layers-list { margin: 0; }
 .odc-basemaps-t {
   font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
-  color: var(--ink-3); padding: 0 5px 6px;
+  color: var(--ink-3); padding: 0 5px 6px; text-align: center;
 }
 .odc-basemaps label {
   display: flex; align-items: center; gap: 9px; margin: 0; padding: 7px 9px;
@@ -459,8 +888,21 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
   background: rgba(23, 36, 42, 0.85) !important; color: var(--ink-2) !important;
 }
 :root[data-theme="dark"] .leaflet-control-attribution a { color: var(--accent); }
-/* Lift the basemap a touch so the dark UI doesn't sit on stark white tiles */
+/* Leaflet tooltips (pin-drag label, "You are here") default to a white bubble — theme it for dark,
+   including the directional CSS-triangle callout arrows so a white arrow doesn't point off the bubble. */
+:root[data-theme="dark"] .leaflet-tooltip {
+  background: var(--surface); color: var(--ink); border-color: var(--border); box-shadow: var(--shadow-sm);
+}
+:root[data-theme="dark"] .leaflet-tooltip-top::before { border-top-color: var(--surface); }
+:root[data-theme="dark"] .leaflet-tooltip-bottom::before { border-bottom-color: var(--surface); }
+:root[data-theme="dark"] .leaflet-tooltip-left::before { border-left-color: var(--surface); }
+:root[data-theme="dark"] .leaflet-tooltip-right::before { border-right-color: var(--surface); }
+/* Lift the basemap a touch so the dark UI doesn't sit on stark white tiles.
+   EXEMPT imagery basemaps (Satellite/Hybrid): they're already dark, and a whole-pane filter
+   forces the GPU to recomposite every tile layer on every pan frame — with Hybrid's three
+   stacked layers that read as serious lag. */
 :root[data-theme="dark"] .leaflet-tile-pane { filter: brightness(0.92) contrast(0.96); }
+:root[data-theme="dark"] .satellite-active .leaflet-tile-pane { filter: none; }
 
 /* Stronger card separation over dark satellite imagery (both themes) */
 .satellite-active .legend,
@@ -468,11 +910,71 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
 .satellite-active .panel,
 .satellite-active .po-popup .leaflet-popup-content-wrapper { box-shadow: 0 2px 18px rgba(0, 0, 0, 0.55); }
 
+/* ============================ DETAIL-PANEL + CHROME REFINEMENTS ========= */
+/* zoom buttons in the bottom-right stack (above the locate button) */
+.zoom-ctl { display: flex; flex-direction: column; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); box-shadow: var(--shadow); }
+.zoom-btn { width: 46px; height: 40px; border: none; background: var(--surface); color: var(--ink); font-size: 20px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
+.zoom-btn:hover { background: var(--surface-2); }
+.zoom-btn + .zoom-btn { border-top: 1px solid var(--border); }
+
+/* header address row: [map-icon Directions button] [address text], directly under the title and
+   above the type/org subline; button and text vertically centered together */
+.pp-addr { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.pp-addr:empty { display: none; }
+.pp-dir-btn { flex: none; width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-input); background: var(--accent); color: var(--on-accent); border: none; cursor: pointer; text-decoration: none; }
+.pp-dir-btn:hover { background: var(--accent-hover); }
+.pp-addr-text { font-size: var(--fs-small); color: var(--ink); line-height: 1.35; }
+.pp-sub { margin-top: 6px; }
+
+/* centered section headers + proposal-card contents inside the detail panel */
+.po-fixes-t, .vote-q, .sig-title { text-align: center; }
+.fix-what, .po-fix .fix-note, .po-fix .fix-meter { text-align: center; }
+.po-fix .fix-bar { margin-left: auto; margin-right: auto; max-width: 180px; }
+
+/* faded "?" help tooltip (themed, multi-line, keyboard-reachable) */
+.help-tip { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%; background: var(--surface-3); color: var(--ink-3); font-size: 11px; line-height: 1; font-weight: 700; cursor: help; position: relative; margin-right: 6px; vertical-align: middle; }
+/* Bubble opens DOWN-RIGHT, anchored to the tip's left edge. The tip now sits left of the centered
+   header, so a left-anchored bubble stays inside the panel (the old center-anchored bubble spilled
+   past the right edge and gave the sidebar a horizontal scrollbar). Opening downward avoids clipping
+   against the panel header above. .pp-body also clips overflow-x as a belt-and-suspenders. */
+.help-tip::after {
+  content: attr(data-tip); position: absolute; top: calc(100% + 8px); left: 0; transform: none;
+  width: 230px; max-width: 72vw; background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+  box-shadow: var(--shadow); border-radius: 8px; padding: 9px 11px; font-size: 12.5px; font-weight: 400;
+  line-height: 1.5; text-align: left; opacity: 0; pointer-events: none; transition: opacity .15s; z-index: 10;
+}
+.help-tip:hover::after, .help-tip:focus::after, .help-tip:focus-visible::after { opacity: 1; } /* :focus too — a touch tap sets :focus but not :focus-visible */
+
+/* Rate CTA — blue primary, full width, stars flanking the text */
+.sig-rate-toggle.rate-cta { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+
+/* "Something wrong?" — its own centered header, three actions spanning the row */
+.po-foot-h { text-align: center; font-size: var(--fs-small); font-weight: 700; color: var(--ink-2); margin: 2px 0 8px; }
+.po-foot { display: flex; gap: 6px; }
+.po-foot .btn { flex: 1; }
+
+/* themed file "Browse" button in the add-photo modal */
+.ph-file { font-size: var(--fs-small); color: var(--ink-2); }
+.ph-file::file-selector-button { font: inherit; padding: 8px 14px; margin-right: 10px; border-radius: var(--r-input); border: 1px solid var(--border); background: var(--surface-2); color: var(--ink); font-weight: 600; cursor: pointer; }
+.ph-file::file-selector-button:hover { background: var(--surface-3); }
+
+/* list dropdown: custom chevron with a right-inset matching the option left-inset (12px) */
+.list-head select {
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23808a92' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; padding-right: 34px;
+}
+
 /* ============================ MOTION =================================== */
 @media (prefers-reduced-motion: reduce) {
   .toast { transition: opacity 0.01ms; }
-  .list-panel { transition: none; }
+  .list-panel, .list-tab { transition: none; }
+  .place-panel, .pp-tab { transition: none; }
+  .ts { transition: none; }
   .btn:active { transform: none; }
+  .locate-btn, .locate-btn:hover { transform: none; }
+  .locate-btn.busy svg { animation: odc-pulse 1s ease-in-out infinite; }
+  .odc-pending { animation: none; stroke: #a855f7 !important; stroke-width: 2 !important; filter: drop-shadow(0 0 3px rgba(168, 85, 247, 0.9)); }
   html { scroll-behavior: auto; }
 }
 
@@ -486,7 +988,7 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
 
 /* The "you agree to…" consent line under submit / upload actions */
 .consent-line {
-  margin: 8px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--ink-3);
+  margin: 8px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-2);
 }
 .consent-line a { color: var(--accent); text-decoration: none; }
 .consent-line a:hover { text-decoration: underline; }
@@ -519,4 +1021,32 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
 .legal-foot {
   margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--border);
   font-size: 14px; color: var(--ink-3);
+}
+
+/* ============================ MOBILE COMPAT ============================ */
+/* Deliberately LAST in the file. Each rule below overrides a component base rule defined earlier at
+   equal specificity, so the cascade resolves them by source order — putting them here is what makes
+   them win, without resorting to !important or id-inflated selectors. */
+
+/* iOS Safari auto-zooms the page when a focused field is < 16px. The search input is 14px and its
+   wrapper is un-zoomed at <=900px, so bump the input itself to 16px there. */
+@media (max-width: 900px) {
+  .search input { font-size: 16px; }
+}
+
+@media (max-width: 480px) {
+  /* Widen the Add panel so the 300px-min Turnstile widget fits (base rule divides the width by the
+     1.25 chrome zoom, leaving ~274px content on a 375px phone), and switch to dvh so iOS Safari's
+     dynamic toolbar can't clip the form's heading. */
+  .panel { max-width: calc(100vw - 20px); max-height: calc(100dvh - 110px); padding: 14px; }
+  /* Lift the bottom-left confidence legend clear of the bottom-right "+ Add location" button — on a
+     ~375px screen the two corner stacks otherwise share a vertical band and the button covers the
+     legend's links. Raising the legend gives vertical separation regardless of legend width. */
+  .map-ctl-bl { bottom: 84px; }
+}
+
+/* search-clear ✕ is a 16px visual inside the input; give touch users a >=24px hit target (WCAG
+   2.5.8). Must follow the base .search-clear rule to win, hence its home here. */
+@media (pointer: coarse) {
+  .search-clear { width: 28px; height: 28px; font-size: 12px; }
 }

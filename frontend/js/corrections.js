@@ -18,7 +18,8 @@ import { currentPosition } from "./geo.js";
 import { pinDragLatLng, snapPinTo, startPinDrag, stopPinDrag } from "./pindrag.js";
 import { app } from "./state.js";
 import { toast } from "./toast.js";
-import { guard } from "./turnstile.js";
+import { guard, verifyFailMessage } from "./turnstile.js";
+import { prefersReducedMotion } from "./viewport.js";
 
 const EARTH_M = 6371000;
 
@@ -75,12 +76,14 @@ export function startCorrection(d) {
   const start = L.latLng(d.lat, d.lon);
   startPinDrag(app.map, start, { label: "Drag me to the right spot" });
   // Nudge the view so the pin + sheet are both comfortably visible.
-  app.map.panTo(start, { animate: true });
+  app.map.panTo(start, { animate: !prefersReducedMotion() });
 
   sheet = document.createElement("div");
   sheet.className = "pin-sheet";
   sheet.setAttribute("role", "dialog");
-  sheet.setAttribute("aria-modal", "true");
+  // Deliberately NOT aria-modal: the fix flow requires dragging the pin on the map BEHIND the sheet,
+  // so a modal (which hides the map from AT and would demand a focus trap) would be a lie and block
+  // the core interaction — same non-modal contract as #submit-panel.
   sheet.setAttribute("aria-label", "Fix this location");
   sheet.innerHTML = `
     <div class="sheet-card">
@@ -120,7 +123,7 @@ export function startCorrection(d) {
     b.textContent = orig;
     if (!ll) { toast("Couldn't get your location — drag the pin instead", "error"); return; }
     snapPinTo(app.map, ll);
-    app.map.setView(ll, Math.max(app.map.getZoom(), 16));
+    app.map.setView(ll, Math.max(app.map.getZoom(), 16), { animate: !prefersReducedMotion() });
   };
   onKey = (e) => { if (e.key === "Escape") teardown(); };
   document.addEventListener("keydown", onKey);
@@ -129,20 +132,22 @@ export function startCorrection(d) {
   try { sheet.querySelector(".sheet-x").focus({ preventScroll: true }); } catch (e) { /* ignore */ }
 
   submitBtn.onclick = async () => {
+    if (submitBtn.disabled) return; // re-entrancy latch: a second tap during the GPS check / POST is ignored
     const at = pinDragLatLng() || start;
     if (haversine(d.lat, d.lon, at.lat, at.lng) > maxMoveM()) {
       toast(`That's more than ${Math.round(maxMoveM() / 1000)} km away — add a new location instead`, "error");
-      return;
+      return; // no await yet, button never disabled — nothing to restore
     }
     const note = sheet.querySelector("#corr-note").value.trim();
+    submitBtn.disabled = true; // cover the GPS check too (guard() keeps it disabled through the POST, then restores)
     let gps = false;
-    if (sheet.querySelector(".corr-gps").checked) {
-      submitBtn.textContent = "Checking your location…";
-      gps = await gpsWithin(at.lat, at.lng, radius);
-      submitBtn.textContent = "Submit fix";
-      if (!gps) toast("Couldn't confirm you're here — submitting without the location boost", "info");
-    }
     try {
+      if (sheet.querySelector(".corr-gps").checked) {
+        submitBtn.textContent = "Checking your location…";
+        gps = await gpsWithin(at.lat, at.lng, radius);
+        submitBtn.textContent = "Submit fix";
+        if (!gps) toast("Couldn't confirm you're here — submitting without the location boost", "info");
+      }
       const res = await guard(tsHost, submitBtn, { action: "correct" }, (token) =>
         postCorrection(d.id, {
           suggested_lat: at.lat, suggested_lon: at.lng,
@@ -159,12 +164,16 @@ export function startCorrection(d) {
       }
       teardown();
     } catch (e) {
+      // Re-arm for retry: guard()'s finally re-enables when guard was reached, but a blocked-Turnstile
+      // throw (before guard's try) or a GPS-phase failure needs this manual restore — idempotent.
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Submit fix";
       if (e.status === 422 && e.error && e.error.code === "move_too_far") {
         toast("That's too far for a correction — add a new location instead", "error");
       } else if (e.status === 429) {
         toast("You've hit today's correction limit — try again tomorrow", "error");
       } else if (e.status === 403) {
-        toast("Please complete the verification", "error");
+        toast(verifyFailMessage(), "error");
       } else if (e.status === 404) {
         toast("That location is no longer available", "error");
         teardown();

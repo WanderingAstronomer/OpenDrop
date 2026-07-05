@@ -1,11 +1,13 @@
 import { API } from "./config.js";
 
-export async function fetchLocations(bounds, cluster = "auto", types = null) {
-  const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
+// `bbox` is a pre-sanitized [west, south, east, north] array (see viewport.sanitizeBbox — raw
+// Leaflet bounds can exceed ±180 at low zooms and would 400). Throws {status, ...body} so callers
+// can tell a client-side rejection (4xx) from a server/network failure.
+export async function fetchLocations(bbox, cluster = "auto", types = null) {
   const params = new URLSearchParams({ bbox: bbox.join(","), cluster });
   if (types) params.set("types", types);
   const r = await fetch(`${API}/locations?${params.toString()}`);
-  if (!r.ok) throw await r.json().catch(() => ({}));
+  if (!r.ok) throw { status: r.status, ...(await r.json().catch(() => ({}))) };
   return r.json();
 }
 
@@ -38,9 +40,16 @@ export async function postSubmit(payload) {
 }
 
 export async function fetchImages(id, includeLow = false) {
-  const r = await fetch(`${API}/locations/${id}/images${includeLow ? "?include_low=true" : ""}`);
-  if (!r.ok) return { images: [] };
-  return r.json();
+  // Soft-fail on EVERY failure mode (non-2xx, network throw, malformed body) into an additive
+  // `failed:true` sentinel so callers can render an error/retry state instead of hanging on aria-busy
+  // or leaving their buttons inert. Success shape {images:[...]} is unchanged.
+  try {
+    const r = await fetch(`${API}/locations/${id}/images${includeLow ? "?include_low=true" : ""}`);
+    if (!r.ok) return { images: [], failed: true };
+    return await r.json();
+  } catch (e) {
+    return { images: [], failed: true };
+  }
 }
 
 export async function voteImage(imgId, vote, token) {

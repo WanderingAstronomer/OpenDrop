@@ -2,6 +2,8 @@
 // drag-to-fix (correction) flows. Drag the marker, click/tap the map to reposition it, or SNAP it
 // to a precise point — your GPS fix or a searched address — via snapPinTo().
 
+import { prefersReducedMotion } from "./viewport.js";
+
 let marker = null;
 let clickHandler = null;
 let onMoveCb = null;  // module-scope so snapPinTo() can re-fire the active session's callback
@@ -26,7 +28,7 @@ export function startPinDrag(map, latlng, { label, onMove } = {}) {
 export function snapPinTo(map, latlng) {
   if (!marker) return null;
   marker.setLatLng(latlng);
-  if (map) map.panTo(latlng);
+  if (map) map.panTo(latlng, { animate: !prefersReducedMotion() });
   if (onMoveCb) onMoveCb(marker.getLatLng());
   return marker.getLatLng();
 }

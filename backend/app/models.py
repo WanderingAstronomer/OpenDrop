@@ -19,10 +19,12 @@ class ImageVoteIn(BaseModel):
 
 
 class AddressIn(BaseModel):
-    line: Optional[str] = None
-    city: Optional[str] = None
+    # Length caps matter for more than tidiness: these fields are fed to the content-screen regexes
+    # (moderation._scan), and an unbounded value is a ReDoS lever. Bound them at the API boundary.
+    line: Optional[str] = Field(default=None, max_length=200)
+    city: Optional[str] = Field(default=None, max_length=120)
     state: Optional[str] = Field(default=None, max_length=2)
-    postal_code: Optional[str] = None
+    postal_code: Optional[str] = Field(default=None, max_length=20)
 
 
 class SubmitIn(BaseModel):
@@ -53,11 +55,23 @@ class CorrectionVoteIn(BaseModel):
     turnstile_token: Optional[str] = None
 
 
+class RatingItem(BaseModel):
+    """One entry of a batched rating submission. value=None retracts the caller's own rating."""
+    attribute: Literal["safety", "condition", "bins"]
+    value: Optional[int] = Field(default=None, ge=1, le=50)
+
+
 class AttributeIn(BaseModel):
     # safety/condition are 1..3 scales (poor/ok/good); bins is a count estimate (1..50).
     # The per-attribute upper bound is enforced in the router.
-    attribute: Literal["safety", "condition", "bins"]
-    value: int = Field(ge=1, le=50)
+    #
+    # Two accepted shapes, ONE Turnstile token either way:
+    #   legacy single:  {attribute, value}
+    #   batched form:   {ratings: [{attribute, value|null}, ...]}   (the rate-form's single Save —
+    #                   one API call instead of one per tap; null value = retract that rating)
+    attribute: Optional[Literal["safety", "condition", "bins"]] = None
+    value: Optional[int] = Field(default=None, ge=1, le=50)
+    ratings: Optional[list[RatingItem]] = Field(default=None, max_length=3)
     turnstile_token: Optional[str] = None
 
 
