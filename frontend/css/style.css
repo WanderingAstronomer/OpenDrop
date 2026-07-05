@@ -708,23 +708,19 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
   .place-panel.open { transform: translateX(0); }
   .place-panel.open.collapsed { transform: translateX(100%); visibility: hidden; transition: transform .2s ease, visibility 0s linear .2s; }
   .pp-grab { display: none; }
-  /* The tab is a SIBLING of the panel (not a DOM child), so it can't literally ride the panel's
-     transform. Instead it gets its OWN transform slide, matching the panel's translate in property
-     (transform), unit (px), magnitude (the panel width), duration, and easing — so both travel the
-     same compositor path in lockstep. The tab's static `right` pins it to the OPEN panel's edge;
-     collapsing translates it right by exactly one panel-width, arriving as the panel settles. The
-     translateY(-50%) vertical centering is folded into the same transform. */
+  /* The tab is a DOM CHILD of the panel, sitting just off its left edge (left:-28px). The panel's
+     OWN transform slides the tab with it, so there is a SINGLE animation — the tab physically cannot
+     desync from the dock. Collapsing (panel translateX(100%)) carries the 28px tab exactly to the
+     screen edge, where it stays clickable: visibility:visible overrides the collapsed panel's
+     visibility:hidden. No own transition — it inherits the panel's slide. */
   .pp-tab {
-    position: absolute; top: 50%; z-index: 1349;
-    right: min(408px, calc(100vw - 56px));
+    position: absolute; top: 50%; left: -28px; z-index: 1349;
     width: 28px; height: 56px; border: 1px solid var(--border); border-right: none;
     border-radius: 10px 0 0 10px; background: var(--surface); color: var(--ink-2);
     font-size: 18px; cursor: pointer; box-shadow: var(--shadow-sm); padding: 0;
     transform: translateY(-50%);
-    transition: transform .2s ease;
+    visibility: visible;
   }
-  /* collapsed: ride out with the panel (same px distance, same transform transition) */
-  .pp-tab[aria-expanded="false"] { transform: translateY(-50%) translateX(min(408px, calc(100vw - 56px))); }
   .pp-tab:hover { color: var(--ink); background: var(--surface-2); }
 }
 
@@ -811,21 +807,17 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
 .list-chev { display: inline-block; transition: transform .2s ease; }
 .list-tab.is-collapsed .list-chev { transform: rotate(180deg); }
 @media (min-width: 768px) {
-  /* Sibling tab, same lockstep technique as .pp-tab: its own transform slide (transform/px/panel-
-     width/duration/easing all matching the drawer's translate) instead of a main-thread `left`
-     transition, so tab and drawer travel the compositor path together. Static `left` pins it to the
-     OPEN drawer's right edge; collapsing translates it left by exactly one drawer-width. */
+  /* Child of the drawer (same technique as .pp-tab): the drawer's own transform slides the tab in
+     lockstep — one animation, no desync. Sits just off the drawer's right edge (right:-28px);
+     collapsing (drawer translateX(-100%)) carries it to the screen's left edge. */
   .list-tab {
-    position: absolute; top: 50%; z-index: 1299;
-    left: min(420px, 85vw);
+    position: absolute; top: 50%; right: -28px; z-index: 1299;
     width: 28px; height: 56px; border: 1px solid var(--border); border-left: none;
     border-radius: 0 10px 10px 0; background: var(--surface); color: var(--ink-2);
     font-size: 18px; cursor: pointer; box-shadow: var(--shadow-sm); padding: 0;
     transform: translateY(-50%);
-    transition: transform .2s ease;
+    visibility: visible;
   }
-  /* collapsed -> tab rides out to the left edge with the drawer (negative = leftward) */
-  .list-tab[aria-expanded="false"] { transform: translateY(-50%) translateX(calc(min(420px, 85vw) * -1)); }
   .list-tab:hover { color: var(--ink); background: var(--surface-2); }
 }
 @media (max-width: 767px) { .list-tab { display: none; } }

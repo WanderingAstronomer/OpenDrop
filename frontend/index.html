@@ -100,9 +100,12 @@
       <div class="pp-sub"></div>
     </div>
     <div class="pp-body"></div>
+    <!-- Collapse tab: a CHILD of the panel so the panel's single transform slides it in exact
+         lockstep with the dock (no second animation to desync). Sticks out the left edge;
+         visibility:visible keeps it shown while the collapsed panel is visibility:hidden. -->
+    <button id="pp-tab" class="pp-tab" type="button" aria-controls="place-panel" aria-expanded="false"
+            aria-label="Reopen place details" hidden>›</button>
   </section>
-  <button id="pp-tab" class="pp-tab" type="button" aria-controls="place-panel" aria-expanded="false"
-          aria-label="Reopen place details" hidden>›</button>
 
   <aside id="list-panel" class="list-panel" aria-label="Locations in view" aria-hidden="true">
     <div class="list-head">
@@ -112,9 +115,10 @@
       <button id="list-close" class="list-close" type="button" aria-label="Close list">✕</button>
     </div>
     <ul id="list-results" class="list-results" aria-live="polite" aria-relevant="additions text" aria-label="Locations in view"></ul>
+    <!-- Collapse tab: a CHILD of the drawer (rides its transform in lockstep). Sticks out the right edge. -->
+    <button id="list-tab" class="list-tab" type="button" aria-controls="list-panel" aria-expanded="false"
+            aria-label="Collapse list" hidden>‹</button>
   </aside>
-  <button id="list-tab" class="list-tab" type="button" aria-controls="list-panel" aria-expanded="false"
-          aria-label="Collapse list" hidden>‹</button>
 
   <div class="map-ctl-br">
     <div class="zoom-ctl" role="group" aria-label="Zoom">
