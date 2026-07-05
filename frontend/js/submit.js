@@ -6,6 +6,7 @@ import { pinDragLatLng, snapPinTo, startPinDrag, stopPinDrag } from "./pindrag.j
 import { app } from "./state.js";
 import { toast } from "./toast.js";
 import { guard, verifyFailMessage } from "./turnstile.js";
+import { prefersReducedMotion } from "./viewport.js";
 
 let mode = "address"; // "address" | "pin"
 let dropped = null; // {lat, lon} when a pin has been placed
@@ -180,7 +181,7 @@ async function snapToGps(panel) {
   // refill everything. Plain drags never get this pass — they must respect dirty fields.
   ADDR_FIELDS.forEach((s) => { const el = panel.querySelector(s); if (el) delete el.dataset.dirty; });
   snapPinTo(app.map, ll);
-  app.map.setView(ll, Math.max(app.map.getZoom(), 16));
+  app.map.setView(ll, Math.max(app.map.getZoom(), 16), { animate: !prefersReducedMotion() });
   toast("Pin snapped to your location", "success");
 }
 
