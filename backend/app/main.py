@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 
 from . import db
 from .config import settings
-from .routers import corrections, images, locations, meta, moderation, stats, votes
+from .routers import corrections, images, locations, meta, moderation, potd, stats, votes
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("opendrop")
@@ -117,3 +117,4 @@ app.include_router(images.router, prefix="/api")
 app.include_router(corrections.router, prefix="/api")
 app.include_router(moderation.router, prefix="/api")
 app.include_router(stats.router, prefix="/api")
+app.include_router(potd.router, prefix="/api")

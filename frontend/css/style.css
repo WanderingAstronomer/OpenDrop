@@ -886,6 +886,50 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
 .modal-actions .primary { flex: 1; }
 img.ph-broken { object-fit: contain; background: var(--surface-2); }
 
+/* ---- Picture-of-the-day placeholder (shown when a place has no community photos) ---- */
+.potd-placeholder { margin-top: 2px; }
+.potd-placeholder a { display: block; border-radius: var(--r-input); overflow: hidden; }
+.potd-placeholder img {
+  width: 100%; height: 150px; object-fit: cover; display: block;
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+/* Shared credit line (also used inside the welcome hero). Small + muted, license/source linked. */
+.potd-credit {
+  margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3);
+}
+.potd-credit a { color: var(--ink-2); text-decoration: none; }
+.potd-credit a:hover { color: var(--accent); text-decoration: underline; }
+
+/* ============================ WELCOME HERO ============================= */
+/* First-visit intro card. Bounded + non-modal (the map stays live behind it); anchored bottom-left
+   on desktop, and a bottom sheet on mobile that never covers the whole screen. */
+.welcome-hero {
+  position: absolute; left: 16px; bottom: 16px; z-index: 1500;
+  width: min(360px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow);
+  animation: welcome-in 0.2s ease-out;
+}
+.welcome-x {
+  position: absolute; top: 8px; right: 8px; z-index: 1;
+  width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; border: none; border-radius: 8px; cursor: pointer;
+  font-size: 16px; line-height: 1; color: #fff; background: rgba(0, 0, 0, 0.45);
+}
+.welcome-x:hover { background: rgba(0, 0, 0, 0.65); }
+.welcome-x:focus-visible { box-shadow: var(--focus); outline: none; }
+.welcome-media { display: block; }
+.welcome-media img {
+  width: 100%; height: 150px; object-fit: cover; display: block;
+  border-radius: var(--r-card) var(--r-card) 0 0;
+}
+.welcome-body { padding: 14px 16px 16px; }
+.welcome-title { margin: 0 0 6px; font-size: var(--fs-h3); color: var(--brand); }
+.welcome-blurb { margin: 0 0 10px; font-size: var(--fs-small); line-height: 1.55; color: var(--ink); }
+.welcome-body .potd-credit { margin: 0 0 12px; }
+.welcome-ok { width: 100%; }
+@keyframes welcome-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
 /* ---- report (location + photo) ---- */
 .btn.danger { color: var(--low); border-color: var(--low-soft); }
 .btn.danger:hover { background: var(--low-soft); border-color: var(--low); }
@@ -1034,6 +1078,7 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
   .locate-btn, .locate-btn:hover { transform: none; }
   .locate-btn.busy svg { animation: odc-pulse 1s ease-in-out infinite; }
   .odc-pending { animation: none; stroke: #a855f7 !important; stroke-width: 2 !important; filter: drop-shadow(0 0 3px rgba(168, 85, 247, 0.9)); }
+  .welcome-hero { animation: none; }
   html { scroll-behavior: auto; }
 }
 

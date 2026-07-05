@@ -3,6 +3,7 @@
 // module is purely about photos — no map-picking here anymore.
 
 import { fetchImages, reportImage, uploadImage, voteImage } from "./api.js";
+import { mountPotdPlaceholder } from "./potd.js";
 import { app } from "./state.js";
 import { toast } from "./toast.js";
 import { guard, verifyFailMessage } from "./turnstile.js";
@@ -100,8 +101,8 @@ export async function mountPhotos(host, locId) {
     return;
   }
   gallery.textContent = `Photos (${imgs.length})`;
+  const top = host.querySelector(".ph-top");
   if (imgs.length) {
-    const top = host.querySelector(".ph-top");
     top.innerHTML = `<img class="ph-thumb" src="${imgs[0].url}" alt="Open photo gallery" ` +
       `role="button" tabindex="0" loading="lazy" />`;
     const thumb = top.querySelector("img");
@@ -110,6 +111,10 @@ export async function mountPhotos(host, locId) {
     thumb.onkeydown = (e) => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openGallery(locId); }
     };
+  } else {
+    // No community photos yet: show Wikimedia's picture of the day as an attributed placeholder
+    // (no-op if POTD is unavailable). The "Photos (0)" count + "Add photo" button are untouched.
+    mountPotdPlaceholder(top);
   }
 }
 

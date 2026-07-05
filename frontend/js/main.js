@@ -5,6 +5,7 @@ import { initLocateButton } from "./locate.js";
 import { applyAttribution, fitToCoverage, initMap } from "./map.js";
 import { initMarkers, render } from "./markers.js";
 import { initPlacePanel, openPlacePanel } from "./panel.js";
+import { maybeShowWelcomeHero } from "./potd.js";
 import { initSearch } from "./search.js";
 import { app } from "./state.js";
 import { initSubmitPanel } from "./submit.js";
@@ -172,6 +173,10 @@ async function boot() {
   window.opendrop = app; // debug handle (also used by preview-based UI verification)
   initPlacePanel(map);
   await refresh();
+
+  // First-visit welcome hero (POTD-backed, closable, shown once). Fire-and-forget: it self-fetches
+  // /api/potd and no-ops if already dismissed or POTD is unavailable — never blocks map startup.
+  maybeShowWelcomeHero();
 
   // Deep link: #bin/<id> opens the place panel directly — free shareable bin links.
   const m = /^#bin\/(\d+)$/.exec(location.hash || "");
