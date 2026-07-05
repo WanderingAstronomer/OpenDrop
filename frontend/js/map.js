@@ -99,6 +99,28 @@ export function initMap() {
     applySatClass(e.name);
   });
 
+  // Track the live height of the Leaflet attribution strip so the bottom-left/right control stacks
+  // can sit a constant small gap above it. It is ~26px on one line but wraps to ~52px+ at narrow
+  // widths, and no Leaflet event fires on that content reflow — a ResizeObserver on the attribution
+  // node is the correct primitive (it also fires once immediately for the initial value). We write
+  // offsetHeight (LOCAL, un-zoomed px) to --attr-h on :root; the CSS calc consuming it
+  // lives in the zoom:1.25 chrome subtree and pre-divides by that zoom, so the value must stay in
+  // un-zoomed px (getBoundingClientRect would be zoom-scaled and double-count). rAF-wrap the write
+  // to avoid the "ResizeObserver loop" warning. Guarded for when the control/observer is absent.
+  const attrEl = map.attributionControl && map.attributionControl.getContainer();
+  if (attrEl && typeof ResizeObserver !== "undefined") {
+    // The control stacks (.map-ctl-bl/.map-ctl-br) are siblings of #map under <body>, not children
+    // of the map container, so the var must live on a shared ancestor to inherit into them — set it
+    // on :root (documentElement), matching the CSS fallback declared there. The map container is not
+    // zoomed, so offsetHeight is un-zoomed px in either place.
+    const root = document.documentElement;
+    const setAttrH = () => root.style.setProperty("--attr-h", attrEl.offsetHeight + "px");
+    const attrRo = new ResizeObserver(() => requestAnimationFrame(setAttrH));
+    attrRo.observe(attrEl); // fires once immediately for the initial value
+    setAttrH();             // belt-and-suspenders initial set (before first rAF)
+    map.on("unload", () => attrRo.disconnect());
+  }
+
   // ("Show my location" lives in js/locate.js as a plain themed HTML button in the bottom-right
   // chrome stack — the old L.Control <a> carried the leaflet-bar class itself, which leaflet.css
   // never sizes/styles (it only targets ".leaflet-bar a" descendants), leaving an invisible,

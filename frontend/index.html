@@ -33,29 +33,38 @@
   <h1 class="sr-only">OpenDrop — map of US clothing donation locations</h1>
   <div id="map" role="application" aria-label="Map of clothing donation locations"></div>
 
-  <div id="search" class="search">
-    <div class="search-field">
-      <input id="search-input" type="search" placeholder="Search a city or address…"
-             autocomplete="off" aria-label="Search for a place or address" />
-      <button id="search-clear" class="search-clear" type="button" aria-label="Clear search" hidden>✕</button>
+  <!-- Top bar: a FLEX row (brand | search) so the logo and search reflow past each other instead of
+       overlapping at narrow / panel-open widths. The bar itself is click-transparent (pointer-events
+       none) so the empty band never steals map interaction; its children re-enable pointer events.
+       The top-right corner is owned by Leaflet's basemap layers control (position:topright, outside
+       this bar) — the bar reserves room for it via padding-right so the centered search never slides
+       under it. -->
+  <div class="topbar">
+    <!-- Brand mark (icon + wordmark). Wordmark hides at a breakpoint where the search would reach it;
+         the icon-only mark remains so the corner is never empty. -->
+    <div class="brand">
+      <picture>
+        <source srcset="opendrop-logo.webp" type="image/webp" />
+        <img class="brand-logo" src="opendrop-logo.png" alt="OpenDrop" width="865" height="240" />
+      </picture>
     </div>
-    <ul id="search-results" class="search-results" role="listbox" aria-label="Search results"></ul>
-    <div id="search-live" class="sr-only" role="status" aria-live="polite"></div>
+
+    <div id="search" class="search">
+      <div class="search-field">
+        <input id="search-input" type="search" placeholder="Search a city or address…"
+               autocomplete="off" aria-label="Search for a place or address" />
+        <button id="search-clear" class="search-clear" type="button" aria-label="Clear search" hidden>✕</button>
+      </div>
+      <ul id="search-results" class="search-results" role="listbox" aria-label="Search results"></ul>
+      <div id="search-live" class="sr-only" role="status" aria-live="polite"></div>
+    </div>
   </div>
 
   <div id="map-status" class="map-status" role="status" aria-live="polite" hidden></div>
 
-  <!-- Brand mark, top-left (where the zoom +/- buttons used to sit before moving bottom-right). -->
-  <div class="brand">
-    <picture>
-      <source srcset="opendrop-logo.webp" type="image/webp" />
-      <img class="brand-logo" src="opendrop-logo.png" alt="OpenDrop" width="865" height="240" />
-    </picture>
-  </div>
-
   <div class="map-ctl-bl">
     <div class="ctl-row">
-      <button id="list-toggle" class="list-toggle" type="button" aria-expanded="false" aria-controls="list-panel" aria-label="List locations in view — open and browse donation spots" title="List locations in view">☰ List</button>
+      <button id="list-toggle" class="list-toggle" type="button" aria-expanded="false" aria-controls="list-panel" aria-label="List locations in view — open and browse donation spots" title="List locations in view">☰ Location list</button>
       <button id="theme-toggle" class="icon-btn theme-toggle" type="button" aria-label="Switch theme" title="Switch theme">☾</button>
     </div>
     <div id="legend" class="legend">
@@ -64,6 +73,10 @@
         <div class="conf-col"><span class="conf-bar low"></span><span class="conf-cap low">Low</span></div>
         <div class="conf-col"><span class="conf-bar medium"></span><span class="conf-cap medium">Medium</span></div>
         <div class="conf-col"><span class="conf-bar high"></span><span class="conf-cap high">High</span></div>
+      </div>
+      <div class="legend-row legend-pending">
+        <span class="ring-swatch pending" aria-hidden="true"></span>
+        <span>Awaiting feedback</span>
       </div>
       <div class="legend-links">
         <a href="/privacy.html">Privacy</a> ·

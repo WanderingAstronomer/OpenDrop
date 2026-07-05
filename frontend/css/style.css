@@ -219,22 +219,35 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 /* Below ~900px even the 1.3x search bar can graze the always-expanded basemap card in the
    top-right — drop to the original 1x there. */
 @media (max-width: 900px) {
-  .search { zoom: 1; width: min(400px, calc(100vw - 130px)); }
+  /* un-zoom the search so it can reach full usable width on small screens; as a flex item it fills
+     the track between the (icon-only, then hidden) brand and the reserved right corner. */
+  .search { zoom: 1; max-width: 400px; }
   .search-results { max-height: 50vh; }
 }
 
 /* Very narrow screens: keep the bottom-left legend and bottom-right button stack from colliding. */
 @media (max-width: 420px) {
-  .map-ctl-bl, .map-ctl-br { zoom: 1.1; }
+  /* zoom drops to 1.1 here — keep --ctl-zoom in step so the attribution-tracking bottom calc stays
+     divided by the actual zoom factor. */
+  .map-ctl-bl, .map-ctl-br { zoom: 1.1; --ctl-zoom: 1.1; }
 }
 
 /* ============================ MAP CHROME ================================== */
 
 /* Bottom-left control stack (legend + List/theme buttons) */
 /* buttons row sits ABOVE the legend and stretches to the legend's (wider) width */
-/* bottom:52 (was 22) lifts the whole stack so the legend clears the map attribution strip on
-   short/half-height windows, where they used to overlap. */
-.map-ctl-bl { position: absolute; bottom: 52px; left: 12px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+/* Both bottom stacks anchor a consistent small gap above the REAL Leaflet attribution strip. JS
+   (map.js) measures the attribution's live height (it wraps 26px -> ~52px at narrow widths) with a
+   ResizeObserver and writes it to --attr-h (local, un-zoomed px) on :root (the stacks are siblings
+   of #map, so the var lives on a shared ancestor to inherit into them). Because these
+   stacks live in the zoom:1.25 subtree, `bottom` is multiplied by 1.25 at layout — so the calc is
+   pre-divided by 1.25 to keep the VISUAL gap constant (the attribution itself is un-zoomed). The
+   var() fallback is a single-line attribution height for first paint before JS runs. */
+/* --ctl-gap: shared visual gap above the attribution. --ctl-zoom: the effective `zoom` on these
+   stacks (1.25 here; 1.1 at <=420px) — the bottom calc divides by it so the visual gap is constant
+   regardless of the chrome-zoom factor at each breakpoint. */
+:root { --ctl-gap: 12px; --ctl-zoom: 1.25; }
+.map-ctl-bl { position: absolute; bottom: calc((var(--attr-h, 26px) + var(--ctl-gap)) / var(--ctl-zoom)); left: 12px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
 .ctl-row { display: flex; gap: 8px; }
 .ctl-row .list-toggle { flex: 1; }
 .legend {
@@ -269,6 +282,13 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .dot.medium { background: #f1a340; }
 .dot.low { background: #d73027; }
 
+/* Legend swatch for the "awaiting feedback" pins: a violet RING (transparent center) mirroring the
+   .odc-pending marker stroke (#a855f7). Fixed violet in both themes to stay pinned to the marker
+   color; a soft glow keeps it visible on the surface without matching the animated pin's pulse. */
+.legend-pending { margin-top: 5px; }
+.ring-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 50%; }
+.ring-swatch.pending { background: transparent; border: 2px solid #a855f7; box-shadow: 0 0 3px rgba(168, 85, 247, .7); }
+
 .list-toggle, .icon-btn {
   background: var(--surface); color: var(--ink); border: 1px solid var(--border);
   border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow);
@@ -277,22 +297,53 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .icon-btn { padding: 8px 11px; font-size: 16px; line-height: 1; }
 .theme-toggle { font-size: 17px; }
 
-/* Brand logo — top-left corner (icon + "OpenDrop" wordmark, 2:1), on a dark card that matches the
-   List/legend chrome so it reads on the light basemap. Hidden below 900px, where the centered
-   search bar would collide with it (the app title still lives in the browser tab there). */
+/* ---- TOP BAR (flex row: brand | search) --------------------------------------------------------
+   Absolute overlay strip above the map. It is a FLEX ROW so the brand and search reflow next to
+   each other and never overlap — replacing the old absolute + translateX(-50%) centering that let
+   the search eclipse the logo at ~half-width. The bar spans the viewport (minus a 12px gutter each
+   side) but reserves the top-right for Leaflet's basemap layers control via padding-right so the
+   centered search never slides under it. pointer-events:none keeps the empty band click-through to
+   the map; the interactive children re-enable events. The strip has NO height/paint of its own, so
+   Leaflet's absolute #map overlay is untouched. */
+.topbar {
+  position: absolute; top: 12px; left: 12px; right: 12px; z-index: 1200;
+  display: flex; align-items: flex-start; gap: 12px;
+  /* reserve the top-right basemap card's footprint (expanded ~150px desktop) so centered search
+     stops short of it; the card lives outside this flex row. */
+  padding-right: 150px;
+  pointer-events: none;
+}
+.topbar > * { pointer-events: auto; }
+
+/* Brand logo (icon + "OpenDrop" wordmark, 2:1), on a card matching the List/legend chrome so it
+   reads on the light basemap. flex:0 0 auto — it never shrinks; the search yields first. */
 .brand {
-  position: absolute; top: 12px; left: 12px; z-index: 1000; line-height: 0;
+  flex: 0 0 auto; z-index: 1000; line-height: 0;
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-ctl); box-shadow: var(--shadow); padding: 7px 12px;
 }
 .brand-logo { display: block; height: 84px; width: auto; }
-/* wide wordmark lockup — hide where the centered search bar would reach it (desktop-first) */
-@media (max-width: 1219px) { .brand { display: none; } }
+/* Below 1024px the full wordmark lockup would crowd the search — crop the card to show only the
+   icon third of the logo (the wordmark art is the right two-thirds of a 2:1 image). The corner is
+   never empty, and the search gains the reclaimed width. */
+@media (max-width: 1023px) {
+  .brand { overflow: hidden; width: 46px; padding: 7px; }
+  .brand-logo { height: 60px; }
+}
+/* On phones the collapsed layers card shrinks to a ~44px icon, so the bar needs far less right
+   reservation; and the search un-zooms to near-full width (see .search below). */
+@media (max-width: 767px) {
+  .topbar { padding-right: 56px; }
+  .brand { display: none; } /* wordmark + icon both drop on phones; app title lives in the tab */
+}
 
-/* Bottom-right chrome stack: locate button above the Add CTA, right-aligned, reflowing together */
+/* Bottom-right chrome stack: locate button above the Add CTA, right-aligned, reflowing together.
+   Anchored to the SAME attribution-tracking baseline as .map-ctl-bl (shared --ctl-gap, same /1.25
+   zoom pre-division) so both stacks' bottom edges line up a consistent distance above the real
+   attribution at any width. Gap unified to 8px to match the bottom-left stack. */
 .map-ctl-br {
-  position: absolute; right: 16px; bottom: 24px; z-index: 1000;
-  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+  position: absolute; right: 16px; bottom: calc((var(--attr-h, 26px) + var(--ctl-gap)) / var(--ctl-zoom)); z-index: 1000;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
 }
 
 /* Add button (primary CTA) */
@@ -335,10 +386,18 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .locate-btn:focus-visible::after { opacity: 1; }
 @media (hover: hover) { .locate-btn:hover::after { opacity: 1; } }
 
-/* Search box (top-center) — scaled 1.3x (owner-tuned down from an initial 1.75: "25% smaller").
-   The vw term is pre-divided by the zoom factor (see UI SCALE note) so it never overflows. */
-.search { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1200;
-  zoom: 1.3; width: min(400px, calc((100vw - 130px) / 1.3)); }
+/* Search box — a FLEX ITEM in .topbar (no longer absolute + translateX centering, which overlapped
+   the logo/panels). It grows to fill the space between the brand and the reserved right corner
+   (flex:1 1 auto), is capped so it doesn't sprawl on wide screens (max-width), and can shrink below
+   its content on narrow screens (min-width:0). `margin:0 auto` centers it within whatever free space
+   remains after the brand + reservations — so it stays optically centered on wide screens yet
+   recenters inside the shrunk track when a side panel reserves margin (see panel-open rules below).
+   Scaled 1.3x via zoom (chrome, participates in layout); widths are authored in local px, so the
+   effective size is ×1.3 — the max-width is pre-divided by 1.3 to keep the on-screen cap constant. */
+.search {
+  flex: 1 1 auto; min-width: 0; margin: 0 auto; z-index: 1200;
+  zoom: 1.3; max-width: calc(400px / 1.3);
+}
 /* the clear button centers on the INPUT (not the whole search wrapper, which grows with the
    results list) — hence the .search-field positioning context around just the input + button */
 .search-field { position: relative; }
@@ -639,23 +698,33 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
 /* desktop dock — RIGHT side, so it never covers the left-docked list (both can be open at once:
    list on the left, this detail panel on the right). */
 @media (min-width: 768px) {
+  /* --pp-w: the dock's rendered width, reused by the tab so it slides EXACTLY the panel's distance. */
+  .place-panel { --pp-w: min(408px, calc(100vw - 56px)); }
   .place-panel {
-    top: 0; right: 0; bottom: 0; width: min(408px, calc(100vw - 56px));
+    top: 0; right: 0; bottom: 0; width: var(--pp-w);
     border-left: 1px solid var(--border); box-shadow: var(--shadow);
     transform: translateX(100%);
   }
   .place-panel.open { transform: translateX(0); }
   .place-panel.open.collapsed { transform: translateX(100%); visibility: hidden; transition: transform .2s ease, visibility 0s linear .2s; }
   .pp-grab { display: none; }
+  /* The tab is a SIBLING of the panel (not a DOM child), so it can't literally ride the panel's
+     transform. Instead it gets its OWN transform slide, matching the panel's translate in property
+     (transform), unit (px), magnitude (the panel width), duration, and easing — so both travel the
+     same compositor path in lockstep. The tab's static `right` pins it to the OPEN panel's edge;
+     collapsing translates it right by exactly one panel-width, arriving as the panel settles. The
+     translateY(-50%) vertical centering is folded into the same transform. */
   .pp-tab {
-    position: absolute; top: 50%; transform: translateY(-50%); z-index: 1349;
+    position: absolute; top: 50%; z-index: 1349;
     right: min(408px, calc(100vw - 56px));
     width: 28px; height: 56px; border: 1px solid var(--border); border-right: none;
     border-radius: 10px 0 0 10px; background: var(--surface); color: var(--ink-2);
     font-size: 18px; cursor: pointer; box-shadow: var(--shadow-sm); padding: 0;
-    transition: right .2s ease;
+    transform: translateY(-50%);
+    transition: transform .2s ease;
   }
-  .pp-tab[aria-expanded="false"] { right: 0; }
+  /* collapsed: ride out with the panel (same px distance, same transform transition) */
+  .pp-tab[aria-expanded="false"] { transform: translateY(-50%) translateX(min(408px, calc(100vw - 56px))); }
   .pp-tab:hover { color: var(--ink); background: var(--surface-2); }
 }
 
@@ -687,25 +756,40 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
 .pp-chev { display: inline-block; transition: transform .2s ease; }
 .pp-tab.is-collapsed .pp-chev { transform: rotate(180deg); }
 
-/* Chrome slides clear of an open overlay panel so nothing important is covered (desktop dock only;
-   phones use bottom sheets). Corner stacks carry zoom:1.25 and the search zoom:1.3 (>900) / 1
-   (<=900), so viewport shifts are divided by the local zoom — the same pre-division used for widths
-   above. Panel width is 408 and list 420 throughout the dock range, so these resolve to a constant
-   visual slide. :not(.collapsed) so a collapsed (off-screen) panel releases the chrome. */
+/* Chrome clears open overlay panels (desktop dock only; phones use bottom sheets).
+   TOP BAR: reserve the panel's width with real LAYOUT (padding on the flex .topbar) instead of a
+   transform. The flex algorithm then recomputes the free space and `margin:0 auto` recenters the
+   search inside the SHRUNK track — so the search is pushed away from the panel, never slid over it.
+   The .topbar is un-zoomed, so these are real px (no /zoom pre-division). The right reservation
+   already holds 150px for the layers card; an open place panel (>=408px) supersedes it, and an open
+   list drawer reserves on the left. BOTTOM corner stacks keep their transform slide (they carry
+   zoom:1.25, hence the /1.25). :not(.collapsed) so a collapsed (off-screen) panel releases the
+   reservation. */
 @media (min-width: 768px) {
-  .map-ctl-bl, .map-ctl-br, .search { transition: transform .2s ease; }
+  .map-ctl-bl, .map-ctl-br { transition: transform .2s ease; }
+  .topbar { transition: padding .2s ease; }
   body:has(.place-panel.open:not(.collapsed)) .map-ctl-br { transform: translateX(calc(min(408px, calc(100vw - 56px)) / -1.25)); }
   body:has(.list-panel.open:not(.collapsed)) .map-ctl-bl { transform: translateX(calc(min(420px, 85vw) / 1.25)); }
-}
-@media (min-width: 768px) and (max-width: 900px) {
-  body:has(.place-panel.open:not(.collapsed)) .search { transform: translateX(-50%) translateX(calc(min(408px, calc(100vw - 56px)) / -2)); }
-  body:has(.list-panel.open:not(.collapsed)) .search { transform: translateX(-50%) translateX(calc(min(420px, 85vw) / 2)); }
-  body:has(.list-panel.open:not(.collapsed)):has(.place-panel.open:not(.collapsed)) .search { transform: translateX(-50%) translateX(calc((min(420px, 85vw) - min(408px, calc(100vw - 56px))) / 2)); }
-}
-@media (min-width: 901px) {
-  body:has(.place-panel.open:not(.collapsed)) .search { transform: translateX(-50%) translateX(calc(min(408px, calc(100vw - 56px)) / -2.6)); }
-  body:has(.list-panel.open:not(.collapsed)) .search { transform: translateX(-50%) translateX(calc(min(420px, 85vw) / 2.6)); }
-  body:has(.list-panel.open:not(.collapsed)):has(.place-panel.open:not(.collapsed)) .search { transform: translateX(-50%) translateX(calc((min(420px, 85vw) - min(408px, calc(100vw - 56px))) / 2.6)); }
+
+  /* place panel open (right dock) -> reserve its width on the right of the bar */
+  body:has(.place-panel.open:not(.collapsed)) .topbar {
+    padding-right: calc(min(408px, calc(100vw - 56px)) + 12px);
+  }
+  /* list drawer open (left dock) -> reserve its width on the left of the bar */
+  body:has(.list-panel.open:not(.collapsed)) .topbar {
+    padding-left: calc(min(420px, 85vw) + 12px);
+  }
+  /* both open -> reserve both sides */
+  body:has(.list-panel.open:not(.collapsed)):has(.place-panel.open:not(.collapsed)) .topbar {
+    padding-left: calc(min(420px, 85vw) + 12px);
+    padding-right: calc(min(408px, calc(100vw - 56px)) + 12px);
+  }
+  /* Below ~1100px, both docks (420 + 408 ≈ 828px) plus the brand leave too little center track and
+     the panels already blanket the top bar — drop the brand so the (shrinkable) search doesn't get
+     squeezed out of its padding box and spill. */
+  @media (max-width: 1100px) {
+    body:has(.list-panel.open:not(.collapsed)):has(.place-panel.open:not(.collapsed)) .brand { display: none; }
+  }
 }
 
 /* ============================ LIST PANEL ================================ */
@@ -727,15 +811,21 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
 .list-chev { display: inline-block; transition: transform .2s ease; }
 .list-tab.is-collapsed .list-chev { transform: rotate(180deg); }
 @media (min-width: 768px) {
+  /* Sibling tab, same lockstep technique as .pp-tab: its own transform slide (transform/px/panel-
+     width/duration/easing all matching the drawer's translate) instead of a main-thread `left`
+     transition, so tab and drawer travel the compositor path together. Static `left` pins it to the
+     OPEN drawer's right edge; collapsing translates it left by exactly one drawer-width. */
   .list-tab {
-    position: absolute; top: 50%; transform: translateY(-50%); z-index: 1299;
+    position: absolute; top: 50%; z-index: 1299;
     left: min(420px, 85vw);
     width: 28px; height: 56px; border: 1px solid var(--border); border-left: none;
     border-radius: 0 10px 10px 0; background: var(--surface); color: var(--ink-2);
     font-size: 18px; cursor: pointer; box-shadow: var(--shadow-sm); padding: 0;
-    transition: left .2s ease;
+    transform: translateY(-50%);
+    transition: transform .2s ease;
   }
-  .list-tab[aria-expanded="false"] { left: 0; }  /* collapsed -> tab rides the left edge */
+  /* collapsed -> tab rides out to the left edge with the drawer (negative = leftward) */
+  .list-tab[aria-expanded="false"] { transform: translateY(-50%) translateX(calc(min(420px, 85vw) * -1)); }
   .list-tab:hover { color: var(--ink); background: var(--surface-2); }
 }
 @media (max-width: 767px) { .list-tab { display: none; } }
@@ -898,11 +988,17 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
 
 /* centered section headers + proposal-card contents inside the detail panel */
 .po-fixes-t, .vote-q, .sig-title { text-align: center; }
+/* The proposals header carries an inline "?" help tip. Flex-center it so the round tip sits
+   vertically centered against the header TEXT (not riding low on the baseline) — a structural
+   alignment instead of a magic vertical-align offset. */
+.po-fixes-t { display: flex; align-items: center; justify-content: center; }
 .fix-what, .po-fix .fix-note, .po-fix .fix-meter { text-align: center; }
 .po-fix .fix-bar { margin-left: auto; margin-right: auto; max-width: 180px; }
 
 /* faded "?" help tooltip (themed, multi-line, keyboard-reachable) */
-.help-tip { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%; background: var(--surface-3); color: var(--ink-3); font-size: 11px; line-height: 1; font-weight: 700; cursor: help; position: relative; margin-right: 6px; vertical-align: middle; }
+/* flex-centered glyph: align-items/justify-content center the "?" in the circle; the parent
+   .po-fixes-t (also flex) centers this circle against the header text — no vertical-align hack. */
+.help-tip { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 17px; height: 17px; border-radius: 50%; background: var(--surface-3); color: var(--ink-3); font-size: 11px; line-height: 1; font-weight: 700; cursor: help; position: relative; margin-right: 6px; }
 /* Bubble opens DOWN-RIGHT, anchored to the tip's left edge. The tip now sits left of the centered
    header, so a left-anchored bubble stays inside the panel (the old center-anchored bubble spilled
    past the right edge and gave the sidebar a horizontal scrollbar). Opening downward avoids clipping
@@ -938,8 +1034,9 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
 /* ============================ MOTION =================================== */
 @media (prefers-reduced-motion: reduce) {
   .toast { transition: opacity 0.01ms; }
-  .list-panel, .list-tab { transition: none; }
-  .place-panel, .pp-tab { transition: none; }
+  .list-panel, .list-tab, .list-chev { transition: none; }
+  .place-panel, .pp-tab, .pp-chev { transition: none; }
+  .topbar, .map-ctl-bl, .map-ctl-br { transition: none; }
   .ts { transition: none; }
   .btn:active { transform: none; }
   .locate-btn, .locate-btn:hover { transform: none; }
@@ -1011,8 +1108,10 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
   .panel { max-width: calc(100vw - 20px); max-height: calc(100dvh - 110px); padding: 14px; }
   /* Lift the bottom-left confidence legend clear of the bottom-right "+ Add location" button — on a
      ~375px screen the two corner stacks otherwise share a vertical band and the button covers the
-     legend's links. Raising the legend gives vertical separation regardless of legend width. */
-  .map-ctl-bl { bottom: 84px; }
+     legend's links. Anchor to the SAME attribution-tracking baseline as the base rule, then add the
+     bottom-right button-stack height (~60px: locate 46 + gap 8 + Add ~44, all in local px, so also
+     /var(--ctl-zoom)) so the legend clears it and still tracks the real attribution height. */
+  .map-ctl-bl { bottom: calc((var(--attr-h, 26px) + var(--ctl-gap) + 60px) / var(--ctl-zoom)); }
 }
 
 /* search-clear ✕ is a 16px visual inside the input; give touch users a >=24px hit target (WCAG
