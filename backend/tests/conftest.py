@@ -8,6 +8,24 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))             # make `pipeline` importable
 sys.path.insert(0, str(ROOT / "backend"))  # make `app` importable
 
+# --- Turnstile hermeticity: the suite must never depend on Cloudflare egress -------------------
+# Every HTTP test sends TOK="dev-mock-token" and relies on verify_turnstile()'s offline
+# short-circuit, which fires only when the secret IS Cloudflare's documented always-pass TEST key
+# (security.TEST_PASS_SECRET). But Settings loads env_file=".env" relative to the pytest cwd, so a
+# real TURNSTILE_SECRET pasted into the repo-root .env (e.g. during a prod deploy) silently flips
+# every guarded endpoint into LIVE siteverify calls — Cloudflare rejects the mock token and the
+# whole suite 403s, or flakes with the network. Real environment variables outrank the .env file in
+# pydantic-settings, and conftest imports before any `app` module, so pinning the var here restores
+# the hermetic dev-mock path no matter what .env says. The production path is untouched: this runs
+# only under pytest, and the short-circuit still requires this exact documented CF test key.
+os.environ["TURNSTILE_SECRET"] = "1x0000000000000000000000000000000AA"  # == security.TEST_PASS_SECRET
+
+from app import security as _security  # noqa: E402 — needs the sys.path + env pin above
+
+assert os.environ["TURNSTILE_SECRET"] == _security.TEST_PASS_SECRET, (
+    "conftest's pinned TURNSTILE_SECRET no longer matches security.TEST_PASS_SECRET — "
+    "the offline short-circuit would not fire and the suite would hit Cloudflare live")
+
 DB_URL = os.environ.get("DATABASE_URL", "postgresql://opendrop:opendrop@localhost:5432/opendrop")
 
 
