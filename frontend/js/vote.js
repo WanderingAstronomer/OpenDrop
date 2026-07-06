@@ -9,7 +9,7 @@ export function mountVote(host, id, onUpdated) {
     <div class="vote-q">Is this spot still here?</div>
     <div class="ts vote-ts"></div>
     <div class="vote-btns">
-      <button class="btn confirm" type="button">${icon.check()} Still here</button>
+      <button class="btn confirm" type="button">Still here</button>
       <button class="btn deny" type="button">${icon.x()} Gone</button>
     </div>`;
   const tsHost = host.querySelector(".vote-ts");

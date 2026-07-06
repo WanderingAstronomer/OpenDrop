@@ -26,7 +26,7 @@ const PANEL_W = 408;   // Google's own full-detail cap (~408px on maps.google.co
 const PEEK_FRACTION = 0.30;
 
 let map = null;
-let panelEl = null, bodyEl = null, titleEl = null, subEl = null, addrEl = null, grabEl = null, tabEl = null;
+let panelEl = null, bodyEl = null, titleEl = null, subEl = null, addrEl = null, dirEl = null, grabEl = null, tabEl = null;
 let currentId = null;
 let opener = null;
 let onCloseCbs = [];
@@ -59,7 +59,7 @@ function distM(lat1, lon1, lat2, lon2) {
 function addrText(a) {
   if (!a) return "";
   const parts = [a.line, [a.city, a.state].filter(Boolean).join(", "), a.postal_code].filter(Boolean);
-  return esc(parts.join(" · "));
+  return parts.join(" · "); // set via textContent (auto-escaped), so no esc() here
 }
 
 // A community-supplied website (from world-editable OSM tags) is only safe to emit as a link when
@@ -87,10 +87,15 @@ function linksHtml(d) {
 }
 
 // Plain-English status; the raw confidence score is an internal signal and never shown.
+// Centered block: a glowing status dot + label on one row, then the confirmed/gone tally below.
+// The dot color is driven off the confidence bucket via a --dot custom property so its soft ring
+// (color-mix) tracks the same hue in either theme.
 function confHtml(d) {
-  return `<span class="dot" style="background:${bucketCssColor(d.bucket)}"></span>
-    <span class="conf-label">${bucketLabel(d.bucket)}</span>
-    <span class="conf-tally">${d.upvotes} confirmed · ${d.denies} said gone</span>`;
+  return `<div class="conf-head">
+      <span class="conf-dot" style="--dot:${bucketCssColor(d.bucket)}"></span>
+      <span class="conf-label">${bucketLabel(d.bucket)}</span>
+    </div>
+    <div class="conf-tally">${d.upvotes} confirmed · ${d.denies} said gone</div>`;
 }
 
 function mountCorrections(host, d) {
@@ -358,28 +363,33 @@ export async function openPlacePanel(latlng, id) {
 
   panelEl.setAttribute("aria-label", d.name);
   titleEl.textContent = d.name;
-  // Address directly under the title, with the map-icon acting as the Directions button (replaces
-  // both the old waypoint glyph and the big Directions button).
+  // Identity block: the blue chip is the Directions link (href set here); the address + category
+  // lines sit beside it. Chip glyph + structure are static in index.html (pp-identity).
   const at = addrText(d.address);
-  addrEl.innerHTML = `
-    <a class="pp-dir-btn" target="_blank" rel="noopener" aria-label="Directions to this spot" title="Directions"
-       href="https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lon}">${icon.directions()}</a>
-    <span class="pp-addr-text">${at || "Get directions"}</span>`;
+  addrEl.textContent = at || "Get directions";
+  if (dirEl) dirEl.href = `https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lon}`;
   subEl.textContent = `${orgTypeLabel(d.org_type)}${d.org_name ? ` · ${d.org_name}` : ""}`;
   if (!latlng && d.lat != null) offsetPan(L.latLng(d.lat, d.lon));
 
   // Owner's T-sketch: photos full-width on top; essentials band; then details|community columns
   // when the panel is wide enough (container query — zero JS); footer carries the crowd tools.
+  // Section order mirrors the redesign: photo → (optional hours/links) → status+presence →
+  // community-proposed changes → community signals → footer. Full-width hairline dividers sit
+  // ABOVE each section via CSS (empty sections collapse, taking their divider with them).
   bodyEl.innerHTML = `
     <div class="photos-area pp-photos"></div>
-    <div class="po-conf conf-slot">${confHtml(d)}</div>
     ${d.hours_raw || linksHtml(d) ? `<div class="po-meta">
       ${d.hours_raw ? `<div class="po-row"><span class="po-ic">${icon.clock()}</span><span>${esc(d.hours_raw)}</span></div>` : ""}
       ${linksHtml(d)}
     </div>` : ""}
-    <div class="fieldedits-area"></div>
-    <div class="corrections-area"></div>
-    <div class="vote-area"></div>
+    <div class="pp-status">
+      <div class="conf-slot">${confHtml(d)}</div>
+      <div class="vote-area"></div>
+    </div>
+    <div class="pp-changes">
+      <div class="fieldedits-area"></div>
+      <div class="corrections-area"></div>
+    </div>
     <div class="signals-area"></div>
     <div class="po-foot-wrap">
       <h3 class="po-foot-h">Something wrong?</h3>
@@ -429,6 +439,7 @@ export function initPlacePanel(m) {
   titleEl = panelEl.querySelector(".pp-title");
   subEl = panelEl.querySelector(".pp-sub");
   addrEl = panelEl.querySelector(".pp-addr");
+  dirEl = panelEl.querySelector(".pp-dir-btn");
   grabEl = panelEl.querySelector(".pp-grab");
 
   app.closePanel = closePlacePanel;

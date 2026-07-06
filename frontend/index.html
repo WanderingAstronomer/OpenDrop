@@ -94,10 +94,21 @@
       <button class="pp-grab" type="button" aria-label="Expand or collapse details" hidden></button>
       <div class="pp-head-row">
         <h2 class="pp-title" tabindex="-1"></h2>
-        <button class="pp-close" type="button" aria-label="Close place details">✕</button>
+        <button class="pp-close" type="button" aria-label="Close place details">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
       </div>
-      <div class="pp-addr"></div>
-      <div class="pp-sub"></div>
+      <!-- Identity row: a blue chip (also the Directions link — href set per-place by panel.js)
+           beside the address + category lines, matching the design's header block. -->
+      <div class="pp-identity">
+        <a class="pp-dir-btn" target="_blank" rel="noopener" aria-label="Directions to this spot" title="Directions" href="#">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+        </a>
+        <div class="pp-idtext">
+          <div class="pp-addr"></div>
+          <div class="pp-sub"></div>
+        </div>
+      </div>
     </div>
     <div class="pp-body"></div>
     <!-- Collapse tab: a CHILD of the panel so the panel's single transform slides it in exact
