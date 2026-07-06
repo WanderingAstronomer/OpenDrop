@@ -51,3 +51,8 @@ tmp/
 
 # --- Local DB/media backups (live data — never publish) ---
 backups/
+*.dump
+
+# local working docs
+/TRIAGE.md
+/PERF.md

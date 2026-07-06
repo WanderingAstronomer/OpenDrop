@@ -12,7 +12,7 @@ import { app } from "./state.js";
 import { initSubmitPanel } from "./submit.js";
 import { initTheme } from "./theme.js";
 import {
-  US_DATA_ENVELOPE, bboxContains, expandBbox, filterFeaturesToBbox, isNationalView, sanitizeBbox,
+  US_DATA_ENVELOPE, cacheHit, expandBbox, filterFeaturesToBbox, isNationalView, sanitizeBbox,
 } from "./viewport.js";
 
 let map = null;
@@ -55,6 +55,8 @@ function viewportBbox() {
 
 // Present `data` for the current viewport: markers see everything fetched (over-fetch margin keeps
 // pans smooth); the list panel is filtered to what is actually in view so "N in view" stays honest.
+// INVARIANT (A1): render() gets the SAME data object on a cache hit — never clone before render(), or the
+// idempotent guard breaks and every pan rebuilds. (updateList's spread copy below is fine.)
 function present(data, bbox) {
   render(data, bbox);
   if (data && data.mode !== "clusters") {
@@ -80,12 +82,17 @@ async function refresh() {
   // covers its expanded viewport. They must never serve each other — a regional cache whose box
   // happens to contain a national viewport would report region totals from partial data (Hawaii/
   // Alaska silently dropped). So the cached view's national-ness must match the current view's.
-  const hit = cache && cache.zoom === zoom && cache.types === types &&
-    cache.national === national && (national || bboxContains(cache.bbox, bbox));
+  const hit = cacheHit(cache, { zoom, types, national, bbox });
   if (hit) {
     present(cache.data, bbox); // still inside the last fetched area — no request needed
-    // Keep the banner truthful on cache-hit pans: never leave a stale error/empty message up.
-    setStatus(countFeatures(cache.data) > 0
+    // Keep the banner truthful on cache-hit pans: never leave a stale error/empty message up. Count
+    // what's actually IN the live viewport, not the whole over-fetched cache — otherwise a zoom-tolerant
+    // points hit into an empty corner of the cached box would clear the empty banner while the visible
+    // map (and the list, which present() already filters) show nothing.
+    const inView = cache.data && cache.data.mode !== "clusters"
+      ? filterFeaturesToBbox(cache.data.features, bbox).length
+      : countFeatures(cache.data);
+    setStatus(inView > 0
       ? null
       : "No donation locations in this area — try zooming out, or add one.");
     return;

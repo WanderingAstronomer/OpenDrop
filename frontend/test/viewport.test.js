@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import {
   sanitizeBbox, expandBbox, bboxContains, filterFeaturesToBbox, isNationalView,
   partitionRegions, regionOf, binPoints, formatCount, REGIONS, prefersReducedMotion,
+  cacheHit, computeDiff,
 } from "../js/viewport.js";
 
 // --- sanitizeBbox ---------------------------------------------------------------------------
@@ -187,4 +188,95 @@ test("prefersReducedMotion reflects matchMedia and defaults to false when unavai
   } finally {
     if (saved === undefined) delete global.window; else global.window = saved;
   }
+});
+
+// --- cacheHit (over-fetch cache predicate) ------------------------------------------------------
+// Asserts the frozen truth table from the render-perf spec §1.3. cacheHit decides whether the live
+// viewport can be served from the last fetched `data` with NO refetch. Fixtures: P() builds a POINTS
+// cache, C() a CLUSTERS cache, V() a live view. BIG⊇SMALL (SMALL sits inside BIG); GROWN is NOT
+// inside BIG.
+const P = (bbox, zoom, types = null, national = false) =>
+  ({ bbox, zoom, types, national, data: { mode: "points" } });
+const C = (bbox, zoom, types = null, national = false) =>
+  ({ bbox, zoom, types, national, data: { mode: "clusters" } });
+const V = (bbox, zoom, types = null, national = false) => ({ bbox, zoom, types, national });
+const BIG = [-100, 30, -80, 45], SMALL = [-95, 33, -85, 42], GROWN = [-110, 20, -70, 55];
+
+test("cacheHit: null cache -> false", () => {
+  assert.equal(cacheHit(null, V(SMALL, 12)), false);
+});
+
+test("cacheHit: types mismatch -> false", () => {
+  assert.equal(cacheHit(P(BIG, 14, "drop_bin"), V(SMALL, 14, null)), false);
+});
+
+test("cacheHit: national mismatch -> false (AK/HI safety)", () => {
+  assert.equal(cacheHit(P(BIG, 14, null, false), V(SMALL, 14, null, true)), false);
+});
+
+test("cacheHit: points regional, contained, DIFFERENT zoom -> true (A2 zoom-tolerant)", () => {
+  assert.equal(cacheHit(P(BIG, 14), V(SMALL, 16)), true);
+});
+
+test("cacheHit: points regional, grown out of cache bbox, same zoom -> false", () => {
+  assert.equal(cacheHit(P(BIG, 14), V(GROWN, 14)), false);
+});
+
+test("cacheHit: clusters, contained, different zoom -> false (binning is zoom-dependent)", () => {
+  assert.equal(cacheHit(C(BIG, 10), V(SMALL, 11)), false);
+});
+
+test("cacheHit: clusters, contained, same zoom -> true (strict hit)", () => {
+  assert.equal(cacheHit(C(BIG, 10), V(SMALL, 10)), true);
+});
+
+test("cacheHit: national both, same zoom -> true", () => {
+  assert.equal(cacheHit(C(BIG, 5, null, true), V(SMALL, 5, null, true)), true);
+});
+
+test("cacheHit: national both, different zoom -> false", () => {
+  assert.equal(cacheHit(C(BIG, 5, null, true), V(SMALL, 6, null, true)), false);
+});
+
+test("cacheHit: points cache but view is national -> false (!view.national guard)", () => {
+  assert.equal(cacheHit(P(BIG, 14, null, false), V(SMALL, 14, null, true)), false);
+});
+
+test("cacheHit: undefined data falls back to strict rule", () => {
+  const c = { bbox: BIG, zoom: 14, types: null, national: false, data: undefined };
+  assert.equal(cacheHit(c, V(SMALL, 14)), true);   // strict: same zoom + contained
+  assert.equal(cacheHit(c, V(SMALL, 16)), false);  // strict: zoom differs
+});
+
+// --- computeDiff (survivor/gone/fresh partition) ------------------------------------------------
+// Spec §1.2: partition an id-keyed marker map against an incoming feature list into markers to REMOVE
+// (gone) and features to ADD (fresh), so render() reuses survivors instead of clearing + rebuilding.
+// Pure: plain Map + feature-like objects, no Leaflet/DOM.
+const feat = (id) => ({ properties: { id }, geometry: { coordinates: [0, 0] } });
+const mk = (id) => ({ __odId: id });
+
+test("computeDiff: gone + fresh partition", () => {
+  const idMap = new Map([[1, mk(1)], [2, mk(2)], [3, mk(3)]]);
+  const { gone, fresh } = computeDiff(idMap, [feat(1), feat(2), feat(4)]);
+  assert.deepEqual(gone.map((m) => m.__odId), [3]);
+  assert.deepEqual(fresh.map((f) => f.properties.id), [4]);
+});
+
+test("computeDiff: all survive -> empty gone/fresh", () => {
+  const idMap = new Map([[1, mk(1)], [2, mk(2)]]);
+  const { gone, fresh } = computeDiff(idMap, [feat(1), feat(2)]);
+  assert.equal(gone.length, 0);
+  assert.equal(fresh.length, 0);
+});
+
+test("computeDiff: empty features -> all gone, none fresh", () => {
+  const idMap = new Map([[1, mk(1)], [2, mk(2)]]);
+  const { gone, fresh } = computeDiff(idMap, []);
+  assert.deepEqual(gone.map((m) => m.__odId).sort((a, b) => a - b), [1, 2]);
+  assert.equal(fresh.length, 0);
+});
+
+test("computeDiff: duplicate id in payload dedupes fresh", () => {
+  const { fresh } = computeDiff(new Map(), [feat(5), feat(5)]);
+  assert.deepEqual(fresh.map((f) => f.properties.id), [5]);
 });

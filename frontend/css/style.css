@@ -369,7 +369,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
   display: flex; align-items: center; gap: 12px; height: var(--bar-h); padding: 0 16px;
   background: color-mix(in srgb, var(--surface) 96%, transparent);
   border-bottom: 1px solid var(--border);
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   pointer-events: none;
 }
 .topbar > * { pointer-events: auto; }
@@ -534,17 +533,19 @@ body:has(#submit-panel:not(.hidden)) .list-pill { display: none; }
   display: flex; align-items: center; justify-content: center; border-radius: 50%;
   background: var(--brand); color: #fff; font-weight: 700; font-size: 13px;
   border: 2px solid #ffffff; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+  contain: layout style;
 }
-.odc-cluster:hover { filter: brightness(1.1); }
+.odc-cluster:hover { background: color-mix(in srgb, var(--brand) 88%, white); }
 /* National-view AK / HI / CONUS totals — bolder than ordinary grid bubbles */
 .odc-cluster.odc-region { background: var(--accent); font-size: 15px; font-weight: 800; }
+.odc-cluster.odc-region:hover { background: color-mix(in srgb, var(--accent) 88%, white); }
 
 /* A pin with an OPEN community proposal (pin move / detail change) awaiting confirmations —
    a gentle stroke pulse so contributors can spot spots that need a vote. */
 /* a pin with an OPEN community proposal: SAME ring weight as every other pin (2px), just recolored
    violet with a gentle pulsing glow — distinct against light, detailed, AND satellite basemaps
    without being visually heavier than its neighbors. */
-.odc-pending { stroke: #a855f7 !important; stroke-width: 2 !important; animation: odc-need-vote 1.6s ease-in-out infinite; }
+.odc-pending { animation: odc-need-vote 1.6s ease-in-out infinite; }
 @keyframes odc-need-vote {
   0%, 100% { filter: drop-shadow(0 0 0.5px rgba(168, 85, 247, 0.55)); }
   50% { filter: drop-shadow(0 0 4px rgba(168, 85, 247, 0.95)); }
@@ -1125,12 +1126,14 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
 :root[data-theme="dark"] .leaflet-tooltip-bottom::before { border-bottom-color: var(--surface); }
 :root[data-theme="dark"] .leaflet-tooltip-left::before { border-left-color: var(--surface); }
 :root[data-theme="dark"] .leaflet-tooltip-right::before { border-right-color: var(--surface); }
-/* Lift the basemap a touch so the dark UI doesn't sit on stark white tiles.
-   EXEMPT imagery basemaps (Satellite/Hybrid): they're already dark, and a whole-pane filter
-   forces the GPU to recomposite every tile layer on every pan frame — with Hybrid's three
-   stacked layers that read as serious lag. */
-:root[data-theme="dark"] .leaflet-tile-pane { filter: brightness(0.92) contrast(0.96); }
-:root[data-theme="dark"] .satellite-active .leaflet-tile-pane { filter: none; }
+/* Lift the basemap a touch so the dark UI doesn't sit on stark white tiles. Filter PER TILE, not on
+   the whole .leaflet-tile-pane: a pane filter re-rasterizes the entire composited basemap on every
+   pan/zoom frame (documented lag), whereas a per-tile filter is rasterized once when the tile loads
+   and then just rides the pane transform. EXEMPT imagery basemaps (Satellite/Hybrid) — already dark;
+   the extra .satellite-active class out-specifies the base rule, so ordering doesn't matter. */
+:root[data-theme="dark"] .leaflet-tile-pane { filter: none; }
+:root[data-theme="dark"] .leaflet-tile { filter: brightness(0.92) contrast(0.96); }
+:root[data-theme="dark"] .satellite-active .leaflet-tile { filter: none; }
 
 /* Stronger card separation over dark satellite imagery (both themes) */
 .satellite-active .legend,
@@ -1209,7 +1212,7 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
   .btn:active { transform: none; }
   .locate-btn, .locate-btn:hover { transform: none; }
   .locate-btn.busy svg { animation: odc-pulse 1s ease-in-out infinite; }
-  .odc-pending { animation: none; stroke: #a855f7 !important; stroke-width: 2 !important; filter: drop-shadow(0 0 3px rgba(168, 85, 247, 0.9)); }
+  .odc-pending { animation: none; filter: drop-shadow(0 0 3px rgba(168, 85, 247, 0.9)); }
   .welcome-hero, .welcome-overlay, .menu-rail, .map-pop { animation: none; }
   html { scroll-behavior: auto; }
 }

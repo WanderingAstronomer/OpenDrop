@@ -70,6 +70,51 @@ export function bboxContains(outer, inner) {
   return outer[0] <= inner[0] && outer[1] <= inner[1] && outer[2] >= inner[2] && outer[3] >= inner[3];
 }
 
+// Decide whether the current view can be served from the last fetched `data` with NO refetch — the
+// over-fetch cache predicate, lifted out of main.js so it is pure and unit-testable.
+//   cache: { bbox:[w,s,e,n], zoom, types, national, data:{mode?} } | null   (the last fetch)
+//   view:  { bbox:[w,s,e,n], zoom, types, national }                        (the live viewport)
+// Rules, in order:
+//  1. national and regional caches NEVER cross-serve — a national render totals region bubbles from
+//     the WHOLE data envelope; a regional cache covers only its padded viewport, so serving one from
+//     the other would silently drop Alaska/Hawaii or report partial totals.
+//  2. POINTS-tolerant (A2): a points response is the <=point_cap nearest points for cache.bbox; any
+//     CONTAINED viewport is a subset of those points, and the server only flips points->clusters when
+//     the bbox GROWS past the density cap. So a contained points view is valid at ANY zoom — killing
+//     the fetch+rebuild that used to fire on every street-level zoom step.
+//  3. CLUSTERS/national fall back to strict zoom equality — cluster cells are pixel/grid-binned per
+//     zoom, so a different zoom needs a fresh aggregation.
+export function cacheHit(cache, view) {
+  if (!cache) return false;
+  if (cache.types !== view.types) return false;
+  if (cache.national !== view.national) return false;
+  const contained = bboxContains(cache.bbox, view.bbox);
+  const cachedIsPoints = !!(cache.data && cache.data.mode !== "clusters");
+  if (cachedIsPoints && !view.national && contained) return true;
+  return cache.zoom === view.zoom && (view.national || contained);
+}
+
+// Partition an id-keyed marker map against an incoming feature list into the markers to REMOVE and
+// the features to ADD — the diff that lets render() reuse survivors instead of clearLayers()+rebuild
+// on every pan (the 1.5x over-fetch means consecutive fetches overlap heavily, so most markers
+// survive). Pure: reads only `.__odId` on markers and `.properties.id` on features, treats markers
+// as opaque handles, touches no Leaflet/DOM — which also keeps it importable in the headless suite.
+//   idMap: Map<id, marker>   features: [{ properties:{ id } }]
+//   -> { gone: marker[], fresh: feature[] }
+export function computeDiff(idMap, features) {
+  const incoming = new Set((features || []).map((f) => f.properties.id));
+  const gone = [];
+  idMap.forEach((m, id) => { if (!incoming.has(id)) gone.push(m); });
+  const seen = new Set();
+  const fresh = (features || []).filter((f) => {
+    const id = f.properties.id;
+    if (idMap.has(id) || seen.has(id)) return false; // already shown, or a dup within this payload
+    seen.add(id);
+    return true;
+  });
+  return { gone, fresh };
+}
+
 // Keep the list panel's "N in view" honest when the fetch over-covered the viewport.
 export function filterFeaturesToBbox(features, [w, s, e, n]) {
   return (features || []).filter((f) => {

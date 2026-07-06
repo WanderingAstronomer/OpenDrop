@@ -16,17 +16,20 @@ export function basemaps() { return _basemaps; }
 const US_MAX_BOUNDS = [[14, -180], [72, -60]];
 
 export function initMap() {
+  // A6 — retain more tiles around the viewport and skip per-frame tile updates during a zoom
+  // animation, so back-pans and zoom steps reuse already-loaded tiles instead of refetching.
+  const baseTuning = { updateWhenZooming: false, keepBuffer: 4 };
   const streetsLight = L.tileLayer(
     "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-    { maxZoom: 20, subdomains: "abcd", noWrap: true, attribution: `${OSM_ATTR} &copy; <a href="https://carto.com/attributions">CARTO</a>` }
+    { maxZoom: 20, subdomains: "abcd", noWrap: true, ...baseTuning, attribution: `${OSM_ATTR} &copy; <a href="https://carto.com/attributions">CARTO</a>` }
   );
   const streetsDetailed = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19, noWrap: true, attribution: OSM_ATTR,
+    maxZoom: 19, noWrap: true, ...baseTuning, attribution: OSM_ATTR,
   });
   const ESRI_ATTR = "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community";
   const esriImagery = () => L.tileLayer(
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    { maxZoom: 19, noWrap: true, attribution: ESRI_ATTR }
+    { maxZoom: 19, noWrap: true, ...baseTuning, attribution: ESRI_ATTR }
   );
   const satellite = esriImagery();
   // Hybrid = imagery + Esri's reference overlays (roads + boundaries/place labels). A layer
@@ -46,10 +49,14 @@ export function initMap() {
   try { saved = localStorage.getItem("opendrop_basemap"); } catch (e) { /* private mode */ }
   const initialName = bases[saved] ? saved : "Light";
 
+  // A4 — on mobile (≤1023px) hide markers during the zoom animation instead of tweening ~400
+  // layers per frame. Init-time only (matchMedia read once), matching the 1024px CSS cutover.
+  const isMobile = !!(window.matchMedia && window.matchMedia("(max-width: 1023px)").matches);
   const map = L.map("map", {
     zoomControl: false, // our own +/- buttons live in the bottom-right stack (js below)
     minZoom: MIN_ZOOM,
     zoomSnap: 0.25, // fractional zoom so the dynamic min-zoom below can sit exactly at "US fills the screen"
+    markerZoomAnimation: !isMobile, // A4 — mobile hides markers during the zoom anim (init-time only)
     layers: [bases[initialName]],
     maxBounds: US_MAX_BOUNDS,
     maxBoundsViscosity: 1.0,

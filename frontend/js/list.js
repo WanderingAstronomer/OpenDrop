@@ -16,6 +16,21 @@ let map = null;
 let onFilterChange = null;
 let current = "all";
 let sheetApi = null; // mobile bottom-sheet controller — module-level so updateList can nudge it
+let lastList = null;   // last data updateList received, for replay on summon (A8)
+let placeOpen = false; // HOISTED from initList closure — listVisible() reads it
+let mq = null;         // HOISTED — assigned in initList
+
+// A8: don't rebuild the list DOM while its surface is hidden. Stash the data and replay when the
+// surface becomes visible again. Hidden means: mobile sheet dismissed / a place panel covering it,
+// OR a desktop rail collapsed behind its edge tab (.collapsed => visibility:hidden). Desktop with the
+// rail expanded is always visible => zero behavior change there.
+function listVisible() {
+  const panel = document.getElementById("list-panel");
+  if (!panel) return false;
+  if (mq && mq.matches) return !panel.classList.contains("collapsed"); // desktop: hidden while collapsed
+  return panel.classList.contains("open") && !placeOpen;              // mobile: summoned & not covered
+}
+function replayList() { if (lastList !== null) updateList(lastList); }
 
 export function getTypes() {
   return FILTERS[current].types;
@@ -43,8 +58,8 @@ export function initList(m, onChange) {
   // Two lives (the summonable-sheet model): desktop = an ALWAYS-present left rail (collapsible
   // behind the edge tab); mobile = NO sheet at rest — a clean map with a bottom-center "List"
   // pill that summons the sheet at half, and a below-peek drag dismisses it (the pill returns).
-  const mq = window.matchMedia("(min-width: 1024px)");
-  let placeOpen = false; // the place panel supersedes the sheet AND the pill while open
+  mq = window.matchMedia("(min-width: 1024px)");
+  // placeOpen (the place panel supersedes the sheet AND the pill while open) is now module-scope.
 
   const setOpen = (open) => {
     panel.classList.toggle("open", open);
@@ -66,7 +81,11 @@ export function initList(m, onChange) {
     listTab.setAttribute("aria-label", label);
     listTab.title = label;
   };
-  listTab.addEventListener("click", () => setCollapsed(!panel.classList.contains("collapsed")));
+  listTab.addEventListener("click", () => {
+    const collapse = !panel.classList.contains("collapsed");
+    setCollapsed(collapse);
+    if (!collapse) replayList(); // A8: expanding a collapsed rail paints the stash it skipped while hidden
+  });
   // (The edge tab is the ONLY collapse affordance — the old in-header ‹ duplicated it and leaked
   // onto mobile, where its display rule out-cascaded the `hidden` attribute.)
 
@@ -104,6 +123,7 @@ export function initList(m, onChange) {
     setOpen(true);
     sheetApi.setSnap("half");
     updatePill();
+    replayList(); // A8: paint the freshest stash now that the sheet is visible
     try { filterSel.focus({ preventScroll: true }); } catch (err) { /* ignore */ }
   };
   if (pill) pill.addEventListener("click", summon);
@@ -113,6 +133,7 @@ export function initList(m, onChange) {
   document.addEventListener("od:place-toggle", (e) => {
     placeOpen = !!(e.detail && e.detail.open);
     updatePill();
+    if (!placeOpen) replayList(); // A8: place closed over an open list => repaint the freshest stash
   });
 
   const seat = (desktop) => {
@@ -121,6 +142,7 @@ export function initList(m, onChange) {
     if (desktop) {
       sheetApi.disable(); // also clears the inline height the sheet owned
       setOpen(true);      // the rail is always present on desktop
+      replayList();       // A8: newly-visible rail paints the accumulated stash immediately
     } else {
       setCollapsed(false);
       setOpen(false);     // mobile default: clean map, the pill summons
@@ -144,6 +166,8 @@ export function updateList(data) {
   const ul = document.getElementById("list-results");
   const count = document.getElementById("list-count");
   if (!ul) return;
+  lastList = data;                 // A8: always stash the latest data
+  if (!listVisible()) return;      // A8: hidden -> skip the DOM rebuild (replayed on re-show)
   ul.innerHTML = "";
   if (!data || data.mode === "clusters") {
     count.textContent = "";
