@@ -20,132 +20,62 @@ router = APIRouter()
 
 _POINT = "ST_SetSRID(ST_MakePoint(%s, %s), 4326)"  # args: (lon, lat)
 
-# Density engine (B8). At cluster zooms we return one bubble per "cell"; the cell size is derived
-# from the map ZOOM (slippy-tile math) so on-screen bubble density is CONSTANT at every zoom and on
-# every device — instead of the old bbox_span/32 that always cut ~32 cells across the viewport
-# (confetti at every zoom). TARGET_PX is the intended on-screen cell edge in CSS px; the frontend
-# caps bubble diameter below it so grid bubbles never touch.
-CLUSTER_TARGET_PX = 82.0
-# At or below this zoom the view spans several states — aggregate GROUP BY state ("one bubble per
-# state", the owner's ask for the first zoom-ins) instead of a grid. Above it, the zoom-aware grid.
-STATE_BAND_MAX_Z = 6.0
-# Web-Mercator world width in CSS px at zoom z is 256 * 2**z, covering 360°. One TARGET_PX-wide cell
-# is therefore this many degrees. Floored so a degenerate tiny cell can't be requested.
-def cluster_cell_deg(z: float) -> float:
-    return max(360.0 / (2.0 ** z) * (CLUSTER_TARGET_PX / 256.0), 0.005)
+# Safety ceiling for the all-points map feed (the active set is ~17k). Clustering is now entirely
+# client-side (Supercluster in js/markers.js); this cap only stops a pathological/huge dataset from
+# returning an unbounded response — exceeding it would mean revisiting server-side clustering.
+MAP_POINT_LIMIT = 100_000
 
 
 @router.get("/locations")
-async def list_locations(bbox: str, types: str | None = None,
-                         min_confidence: float = Query(0.0, ge=0, le=100), cluster: str = "auto",
-                         z: float | None = Query(None, ge=0, le=24)):
-    try:
-        west, south, east, north = (float(x) for x in bbox.split(","))
-    except Exception:  # noqa: BLE001
-        raise HTTPException(400, {"code": "bad_bbox", "message": "bbox must be 'west,south,east,north'"})
-    if not (west < east and south < north
-            and -180 <= west <= 180 and -180 <= east <= 180
-            and -90 <= south <= 90 and -90 <= north <= 90):
-        raise HTTPException(400, {"code": "bad_bbox", "message": "invalid bbox bounds"})
+async def list_locations(bbox: str | None = None, types: str | None = None,
+                         min_confidence: float = Query(0.0, ge=0, le=100)):
+    """Every active point, as GeoJSON. Clustering now lives entirely CLIENT-side (Supercluster in
+    js/markers.js): the map loads this feed once and computes clusters/points per view with no server
+    round-trip — so there is no cluster mode, no zoom param, no per-pan fetch. `bbox` is OPTIONAL: omit
+    it for the whole active set (the map's one-shot load); pass it to filter (tests / scoped callers)."""
+    where = "status = 'active' AND confidence >= %s"
+    params: list = [min_confidence]
+    if bbox is not None:
+        try:
+            west, south, east, north = (float(x) for x in bbox.split(","))
+        except Exception:  # noqa: BLE001
+            raise HTTPException(400, {"code": "bad_bbox", "message": "bbox must be 'west,south,east,north'"})
+        if not (west < east and south < north
+                and -180 <= west <= 180 and -180 <= east <= 180
+                and -90 <= south <= 90 and -90 <= north <= 90):
+            raise HTTPException(400, {"code": "bad_bbox", "message": "invalid bbox bounds"})
+        where += " AND geom && ST_MakeEnvelope(%s, %s, %s, %s, 4326)"
+        params += [west, south, east, north]
 
     type_list = [t for t in (types.split(",") if types else []) if t]
-    where = ("status = 'active' AND geom && ST_MakeEnvelope(%s, %s, %s, %s, 4326) "
-             "AND confidence >= %s")
-    params: list = [west, south, east, north, min_confidence]
     if type_list:
         where += " AND org_type = ANY(%s)"
         params.append(type_list)
 
     async with db.pool.connection() as conn:
-        if cluster == "off":
-            use_points = True
-        elif cluster == "on":
-            use_points = False
-        else:
-            # We only need to know whether the in-bbox active set EXCEEDS point_cap, not the exact
-            # total, so cap the scan at point_cap+1 rows. The map polls this on every pan/zoom; an
-            # unbounded count(*) over the (national) active set on each call is needless DB load.
-            cur = await conn.execute(
-                f"SELECT count(*) AS n FROM (SELECT 1 FROM locations WHERE {where} LIMIT %s) t",
-                params + [settings.point_cap + 1])
-            use_points = (await cur.fetchone())["n"] <= settings.point_cap
-
-        if use_points:
-            # has_pending: any OPEN community proposal (pin move or detail change) awaiting
-            # confirmations — the map pulses these so contributors can find spots needing a vote.
-            # Both EXISTS probes ride the partial *_open_ix indexes.
-            cur = await conn.execute(
-                f"""SELECT id, name, org_type, confidence, ST_X(geom) AS lon, ST_Y(geom) AS lat,
-                           (EXISTS (SELECT 1 FROM location_corrections c
-                                     WHERE c.location_id = locations.id AND c.status = 'open')
-                            OR EXISTS (SELECT 1 FROM field_corrections f
-                                        WHERE f.location_id = locations.id AND f.status = 'open')
-                           ) AS has_pending
-                    FROM locations WHERE {where} LIMIT %s""",
-                params + [settings.point_cap],
-            )
-            features = []
-            for r in await cur.fetchall():
-                conf = float(r["confidence"])
-                features.append({
-                    "type": "Feature",
-                    "geometry": {"type": "Point", "coordinates": [r["lon"], r["lat"]]},
-                    "properties": {"id": r["id"], "name": r["name"], "org_type": r["org_type"],
-                                   "confidence": conf, "bucket": bucket(conf),
-                                   "has_pending": bool(r["has_pending"])},
-                })
-            return {"mode": "points", "type": "FeatureCollection", "features": features}
-
-        # Cluster mode, two tiers (B8). The map passes its zoom `z`; from it we pick the aggregation.
-        #  - z is None (a client that predates the density engine): keep the legacy bbox_span/32 grid
-        #    so nothing regresses during the deploy window (state band + zoom cell need z).
-        #  - z <= STATE_BAND_MAX_Z (wide, several states): ONE BUBBLE PER STATE at the state's data
-        #    centroid; the ~0.4% of rows with no state fall back to a coarse grid cell so they stay
-        #    visible and don't pile onto one phantom centroid.
-        #  - otherwise: a ZOOM-AWARE grid — cell = f(z) so on-screen bubble density stays constant,
-        #    but each bubble sits at the data CENTROID of its cell (not the grid vertex), so a zoom-in
-        #    reads as organic clusters where the pins are, not graph paper. The frontend pixel-merges
-        #    the cells and caps bubble diameter so neighbouring centroids never touch.
-        if z is None:
-            tier = "grid"
-            cell = max(max(east - west, north - south) / 32.0, 0.005)
-            cur = await conn.execute(
-                f"""SELECT avg(ST_X(geom)) AS lon, avg(ST_Y(geom)) AS lat,
-                           count(*) AS cnt, avg(confidence) AS ac
-                    FROM locations WHERE {where}
-                    GROUP BY ST_SnapToGrid(geom, %s, %s) LIMIT %s""",
-                params + [cell, cell, settings.cluster_cap],
-            )
-        elif z <= STATE_BAND_MAX_Z:
-            tier = "state"
-            cell = cluster_cell_deg(z)  # only the null-state fallback grid uses it
-            # ORDER BY count DESC before the cap: if a view ever exceeds cluster_cap groups, the
-            # DENSEST survive and only the sparsest are dropped (a graceful truncation, not arbitrary).
-            cur = await conn.execute(
-                f"""SELECT avg(ST_X(geom)) AS lon, avg(ST_Y(geom)) AS lat,
-                           count(*) AS cnt, avg(confidence) AS ac
-                    FROM locations WHERE {where}
-                    GROUP BY COALESCE(NULLIF(state, ''), ST_AsText(ST_SnapToGrid(geom, %s, %s)))
-                    ORDER BY count(*) DESC LIMIT %s""",
-                params + [cell, cell, settings.cluster_cap],
-            )
-        else:
-            tier = "grid"
-            cell = cluster_cell_deg(z)
-            # Bin by the zoom-sized cell (constant on-screen density) but place each bubble at the
-            # CENTROID of the pins in that cell (avg), not the grid vertex — organic clusters, not a
-            # lattice. ORDER BY count DESC so if a view exceeds cluster_cap the densest cells survive.
-            cur = await conn.execute(
-                f"""SELECT avg(ST_X(geom)) AS lon, avg(ST_Y(geom)) AS lat,
-                           count(*) AS cnt, avg(confidence) AS ac
-                    FROM locations WHERE {where}
-                    GROUP BY ST_SnapToGrid(geom, %s, %s) ORDER BY count(*) DESC LIMIT %s""",
-                params + [cell, cell, settings.cluster_cap],
-            )
-        clusters = [{"lon": float(r["lon"]), "lat": float(r["lat"]),
-                     "count": r["cnt"], "avg_confidence": round(float(r["ac"]), 1)}
-                    for r in await cur.fetchall()]
-        return {"mode": "clusters", "tier": tier, "clusters": clusters}
+        # has_pending: any OPEN community proposal (pin move or detail change) — the map pulses these
+        # so contributors can find spots needing a vote. Computed SET-wise (id IN <small open set>)
+        # rather than a per-row EXISTS so the full-table load stays one cheap pass; open proposals are
+        # rare and ride the partial *_open_ix indexes.
+        cur = await conn.execute(
+            f"""SELECT id, name, org_type, confidence, ST_X(geom) AS lon, ST_Y(geom) AS lat,
+                       (id IN (SELECT location_id FROM location_corrections WHERE status = 'open'
+                               UNION SELECT location_id FROM field_corrections WHERE status = 'open')
+                       ) AS has_pending
+                FROM locations WHERE {where} LIMIT %s""",
+            params + [MAP_POINT_LIMIT],
+        )
+        features = [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [r["lon"], r["lat"]]},
+                "properties": {"id": r["id"], "name": r["name"], "org_type": r["org_type"],
+                               "bucket": bucket(float(r["confidence"])),
+                               "has_pending": bool(r["has_pending"])},
+            }
+            for r in await cur.fetchall()
+        ]
+    return {"type": "FeatureCollection", "features": features}
 
 
 @router.get("/locations/{loc_id}")

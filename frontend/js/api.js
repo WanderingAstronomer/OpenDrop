@@ -1,15 +1,14 @@
 import { API } from "./config.js";
 
-// `bbox` is a pre-sanitized [west, south, east, north] array (see viewport.sanitizeBbox — raw
-// Leaflet bounds can exceed ±180 at low zooms and would 400). Throws {status, ...body} so callers
-// can tell a client-side rejection (4xx) from a server/network failure.
-// `z` (map zoom) drives the cluster density tier server-side (B8 — state band vs zoom-aware grid);
-// omitted for points-mode callers, where it has no effect.
-export async function fetchLocations(bbox, cluster = "auto", types = null, z = null) {
-  const params = new URLSearchParams({ bbox: bbox.join(","), cluster });
+// One-shot load of every active point (the whole US set, ~17k). The map holds these client-side and
+// clusters per view with Supercluster — there is no per-pan fetch. Optional `types` narrows the feed
+// server-side, though the map keeps the full set and filters locally so a category switch needs no
+// refetch. Throws {status, ...body} so boot can tell a 4xx (client bug) from a 5xx/network failure.
+export async function fetchAllLocations(types = null) {
+  const params = new URLSearchParams();
   if (types) params.set("types", types);
-  if (z != null) params.set("z", z);
-  const r = await fetch(`${API}/locations?${params.toString()}`);
+  const qs = params.toString();
+  const r = await fetch(`${API}/locations${qs ? `?${qs}` : ""}`);
   if (!r.ok) throw { status: r.status, ...(await r.json().catch(() => ({}))) };
   return r.json();
 }

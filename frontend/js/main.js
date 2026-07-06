@@ -1,52 +1,38 @@
-import { fetchLocations } from "./api.js";
+import { fetchAllLocations } from "./api.js";
 import { initChrome } from "./chrome.js";
 import { loadMeta } from "./config.js";
 import { getTypes, initList, updateList } from "./list.js";
 import { initLocateButton } from "./locate.js";
 import { applyAttribution, fitToCoverage, initMap, initMapInsets } from "./map.js";
-import { initMarkers, render } from "./markers.js";
+import { initMarkers, loadPoints, renderView } from "./markers.js";
 import { initPlacePanel, openPlacePanel } from "./panel.js";
 import { maybeShowWelcomeHero } from "./potd.js";
 import { initSearch } from "./search.js";
 import { app } from "./state.js";
 import { initSubmitPanel } from "./submit.js";
 import { initTheme } from "./theme.js";
-import {
-  US_DATA_ENVELOPE, cacheHit, expandBbox, filterFeaturesToBbox, inUSCoverage,
-  isNationalView, sanitizeBbox,
-} from "./viewport.js";
+import { filterFeaturesToBbox, inUSCoverage, sanitizeBbox } from "./viewport.js";
 
+// Single-engine model: the whole active set (~17k points) is fetched ONCE and clustered client-side
+// by Supercluster (js/markers.js). Panning and zooming re-render off the in-memory set with no server
+// round-trip; the category filter is a client-side subset (instant, no refetch); only an external
+// mutation (a new submission, a vote that flips a pin) reloads the feed.
 let map = null;
 let debounceTimer = null;
-let firstLoad = true;
-let hasData = false;
+let allFeatures = [];   // the whole active set (all types), loaded once; re-filtered client-side
+let loaded = false;     // has the one-shot load landed at least once? (drives the loading banner)
+let reqSeq = 0;         // only the newest load may write allFeatures (a submit-vs-filter refetch race)
 
-// Over-fetch cache: the last request covered `bbox` (viewport grown by OVERFETCH) at `zoom` for
-// `types`. While the viewport stays inside it at the same zoom, re-render from cache instead of
-// refetching — the standard buffered-extent pattern (cf. Leaflet's own keepBuffer tile margin),
-// which kills the request-per-small-pan problem without a manual "search this area" button.
-const OVERFETCH = 1.5;
-let cache = null;
-// Monotonic request token: only the NEWEST request may write the cache or the DOM. Without it a
-// slow response from pan A lands after fast pan B and clobbers B's view — and worse, a response
-// in flight when a mutation calls forceRefresh() would silently repopulate the just-busted cache.
-let reqSeq = 0;
+// More than this many pins in the EXACT viewport -> the list shows "zoom in to list" instead of a
+// nearest-first 300-row list (the same gate the old cluster response drove).
+const LIST_CAP = 500;
+const COVERAGE_COPY = "OpenDrop covers the United States — head back west, or search a US city.";
+const EMPTY_COPY = "No donation locations in this area — try zooming out, or add one.";
 
 function setStatus(text) {
   const el = document.getElementById("map-status");
   if (!el) return;
-  if (text) {
-    el.textContent = text;
-    el.hidden = false;
-  } else {
-    el.hidden = true;
-  }
-}
-
-function countFeatures(data) {
-  if (!data) return 0;
-  if (data.mode === "clusters") return (data.clusters || []).reduce((s, c) => s + (c.count || 0), 0);
-  return (data.features || []).length;
+  if (text) { el.textContent = text; el.hidden = false; } else { el.hidden = true; }
 }
 
 function viewportBbox() {
@@ -54,133 +40,83 @@ function viewportBbox() {
   return sanitizeBbox({ west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() });
 }
 
-// Present `data` for the current viewport: markers see everything fetched (over-fetch margin keeps
-// pans smooth); the list panel is filtered to what is actually in view so "N in view" stays honest.
-// INVARIANT (A1): render() gets the SAME data object on a cache hit — never clone before render(), or the
-// idempotent guard breaks and every pan rebuilds. (updateList's spread copy below is fine.)
-function present(data, bbox) {
-  render(data, bbox);
-  if (data && data.mode !== "clusters") {
-    updateList({ ...data, features: filterFeaturesToBbox(data.features, bbox) });
-  } else {
-    updateList(data);
-  }
+// The active set filtered to the current category selection (list.js owns the selection). Client-side
+// so a category switch is instant — no refetch of the 17k feed.
+function typedFeatures() {
+  const types = getTypes(); // CSV of org_types, or null for "everything"
+  if (!types) return allFeatures;
+  const set = new Set(types.split(","));
+  return allFeatures.filter((f) => set.has(f.properties.org_type));
 }
 
-const COVERAGE_COPY = "OpenDrop covers the United States — head back west, or search a US city.";
-// ONE shared instance, not a factory: render() is idempotent by data identity (A1), so repeated
-// overseas pans present the same object and skip the rebuild instead of re-clearing every time.
-const EMPTY_FC = { mode: "points", type: "FeatureCollection", features: [], outOfCoverage: true };
-
-async function refresh() {
+// Paint markers + list + banner for the current view. No network — a pure client render off the
+// in-memory set. Called on every moveend/resize and after a (re)load or filter change.
+function render() {
+  if (!map) return;
   const bbox = viewportBbox();
-  if (!bbox) {
-    firstLoad = false;
-    // Two very different null-bbox cases: an UNSIZED container (boot race — stay silent, the
-    // resize hooks re-trigger) vs a SIZED view lying entirely in the noWrap void past ±180
-    // (a hard westward fling near the Aleutians) — that one must present the honest empty state,
-    // not leave stale rows and a cleared banner over grey void.
-    const c = map.getContainer();
-    if (c.offsetWidth > 0 && c.offsetHeight > 0) {
-      reqSeq++;
-      present(EMPTY_FC, [0, 0, 0, 0]);
-      setStatus(COVERAGE_COPY);
-    }
-    return;
-  }
   const zoom = map.getZoom();
-  const types = getTypes();
-  // The world is freely pannable (B5), so "national-width" says nothing about WHERE the view is:
-  // a min-zoom view over Europe is 65°+ wide with every region-bubble anchor off-screen. Only
-  // collapse to the envelope fetch when US data territory is actually on screen (the real data
-  // boxes, not the envelope's empty ocean padding); otherwise say so honestly.
+  if (!bbox) {
+    // Unsized container (boot race — the resize hooks re-fire) OR a view entirely in the noWrap void
+    // past ±180 (a hard westward fling). Nothing to paint; point home.
+    renderView(null, zoom);
+    updateList({ mode: "points", features: [], outOfCoverage: true });
+    const c = map.getContainer();
+    if (c.offsetWidth > 0 && c.offsetHeight > 0) setStatus(loaded ? COVERAGE_COPY : "Loading donation locations…");
+    return;
+  }
+  renderView(bbox, zoom);
+  const inView = filterFeaturesToBbox(typedFeatures(), bbox);
   const inCoverage = inUSCoverage(bbox);
-  const national = isNationalView(bbox) && inCoverage;
-  const emptyCopy = inCoverage
-    ? "No donation locations in this area — try zooming out, or add one."
-    : COVERAGE_COPY;
 
-  // No US data territory on screen: the result is knowably empty without a round-trip. Present
-  // the empty state honestly and skip the fetch — counting a fetch's over-reach margin here
-  // would clear the banner over a blank ocean (the 1.5x expansion of a min-zoom Paris view
-  // reaches all the way back into US data). The seq bump invalidates any in-flight US response
-  // so it can't land on top of the overseas view.
-  if (!inCoverage) {
-    reqSeq++;
-    present(EMPTY_FC, bbox);
-    setStatus(emptyCopy);
-    firstLoad = false;
-    return;
-  }
+  // List: honest to the EXACT viewport. Over the cap -> the "zoom in to list" affordance (updateList
+  // reads a mode:"clusters" payload as "too many"); out of coverage -> the point-home empty state.
+  if (!inCoverage) updateList({ mode: "points", features: [], outOfCoverage: true });
+  else if (inView.length > LIST_CAP) updateList({ mode: "clusters" });
+  else updateList({ mode: "points", features: inView });
 
-  // A national render totals region bubbles from the WHOLE data envelope; a regional cache only
-  // covers its expanded viewport. They must never serve each other — a regional cache whose box
-  // happens to contain a national viewport would report region totals from partial data (Hawaii/
-  // Alaska silently dropped). So the cached view's national-ness must match the current view's.
-  const hit = cacheHit(cache, { zoom, types, national, bbox });
-  if (hit) {
-    present(cache.data, bbox); // still inside the last fetched area — no request needed
-    // Keep the banner truthful on cache-hit pans: never leave a stale error/empty message up. Count
-    // what's actually IN the live viewport, not the whole over-fetched cache — otherwise a zoom-tolerant
-    // points hit into an empty corner of the cached box would clear the empty banner while the visible
-    // map (and the list, which present() already filters) show nothing.
-    const inView = cache.data && cache.data.mode !== "clusters"
-      ? filterFeaturesToBbox(cache.data.features, bbox).length
-      : countFeatures(cache.data);
-    setStatus(inView > 0 ? null : emptyCopy);
-    return;
-  }
+  // Banner: the loading message wins until the first load lands; then reflect what is actually in view.
+  if (!loaded) setStatus("Loading donation locations…");
+  else if (!inCoverage) setStatus(COVERAGE_COPY);
+  else setStatus(inView.length ? null : EMPTY_COPY);
+}
 
-  if (firstLoad) setStatus("Loading donation locations…");
+// One-shot load of the whole active set (boot + after a mutation). Rebuilds the cluster index and
+// repaints. Monotonic seq: a slow load can't clobber a newer one (a submit refetch racing a filter).
+async function loadAll() {
   const seq = ++reqSeq;
+  if (!loaded) setStatus("Loading donation locations…");
   try {
-    // A national view always fetches the FULL data envelope: region-bubble totals must be true
-    // nationwide counts (not whatever slice the padded viewport happened to cover), and the one
-    // cached response then serves every national pan.
-    const fetchBbox = national ? US_DATA_ENVELOPE : expandBbox(bbox, OVERFETCH);
-    // Pass the map zoom so the server picks the density tier (state band vs zoom-aware grid, B8).
-    const data = await fetchLocations(fetchBbox, "auto", types, zoom);
-    if (seq !== reqSeq) return; // superseded by a newer pan or a mutation — drop this response
-    cache = { bbox: fetchBbox, zoom, types, national, data };
-    present(data, bbox);
-    if (countFeatures(data) > 0) {
-      hasData = true;
-      setStatus(null);
-    } else {
-      setStatus(emptyCopy);
-    }
+    const fc = await fetchAllLocations();
+    if (seq !== reqSeq) return; // superseded by a newer load
+    allFeatures = fc.features || [];
+    loaded = true;
+    loadPoints(typedFeatures());
+    render();
   } catch (e) {
-    if (seq !== reqSeq) return; // stale failure — a newer request owns the UI now
-    // Only claim the server is unreachable when it actually is: a network failure (fetch throws
-    // TypeError, no .status) or a 5xx. A 4xx is a client-side bug — log it, don't alarm the user.
+    if (seq !== reqSeq) return;
     const status = e && e.status;
     if (status && status < 500) {
-      // 4xx is a client-side bug — log, don't alarm the user. Only clear the banner pre-first-load
-      // (nothing on the map yet to contradict a cleared status).
-      console.warn("locations request rejected (client bug?)", e);
-      if (!hasData) setStatus(null);
+      // 4xx is a client-side bug — log, don't alarm; clear the banner only pre-first-load.
+      console.warn("locations load rejected (client bug?)", e);
+      if (!loaded) setStatus(null);
     } else {
-      // 5xx or network failure (fetch throws, no .status). Surface it ALWAYS — even after a
-      // successful first load — so panning into a new area during a server blip isn't silent.
-      setStatus("Couldn't reach the server. It may still be starting — pan the map to retry.");
+      // 5xx or a network failure (fetch throws, no .status). Surface it — the map has no data.
+      setStatus("Couldn't reach the server. It may still be starting — reload to retry.");
     }
-  } finally {
-    firstLoad = false;
   }
 }
 
-function debouncedRefresh() {
-  clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(refresh, 300);
+// Category filter changed: re-filter the already-loaded set and repaint. No refetch.
+function applyFilter() {
+  loadPoints(typedFeatures());
+  render();
 }
 
-// External mutations (a new submission, a filter change) must bypass the over-fetch cache — and
-// invalidate any response already in flight, which predates the mutation by definition.
-function forceRefresh() {
-  reqSeq++;
-  cache = null;
-  debouncedRefresh();
-}
+// External mutation (a new submission, a vote that flips a pin's visibility) — the server set changed,
+// so reload the whole feed and rebuild the index.
+function forceRefresh() { loadAll(); }
+
+function debouncedRender() { clearTimeout(debounceTimer); debounceTimer = setTimeout(render, 120); }
 
 async function boot() {
   initTheme();
@@ -191,29 +127,22 @@ async function boot() {
   applyAttribution(map, meta.sources);
   initMarkers(map);
   initSearch(map);
-  initList(map, forceRefresh);
+  initList(map, applyFilter);
   initSubmitPanel();
   initLocateButton(map);
   initChrome(); // top-bar action cluster: layers/legend popovers + mobile FAB relocation
-  map.on("moveend", debouncedRefresh);
-  map.on("resize", debouncedRefresh);
 
-  // The container's box changes with LAYOUT, not just window resizes: the zero-size boot race
-  // (hidden tab, iframe) AND the desktop rail insets (B6 — the css :has rules shift #map's
-  // left/right edges when a rail opens, so the visible map IS the map). Watch it permanently,
-  // debounced past the .2s inset transition's per-frame fires; invalidateSize emits Leaflet's
-  // "resize", which re-derives the min zoom (map.js) and refetches via the hook above — bounds,
-  // fetches, and "N in view" all track what the eye actually sees. pan:false keeps the top-left
-  // anchor still, so opening a rail trims the covered side instead of re-centering everything.
+  // The container box changes with LAYOUT, not just window resizes: the zero-size boot race (hidden
+  // tab, iframe) AND the desktop rail insets (the JS insets shift #map's left/right edges when a rail
+  // opens). Watch it permanently, debounced past the .2s inset transition; invalidateSize emits
+  // Leaflet's "resize", which re-derives the min zoom (map.js) and repaints via the hook below.
   const container = map.getContainer();
   if (typeof ResizeObserver !== "undefined") {
     let sizeSettle = null;
     const ro = new ResizeObserver(() => {
       clearTimeout(sizeSettle);
       sizeSettle = setTimeout(() => {
-        if (container.offsetWidth > 0 && container.offsetHeight > 0) {
-          map.invalidateSize({ pan: false });
-        }
+        if (container.offsetWidth > 0 && container.offsetHeight > 0) map.invalidateSize({ pan: false });
       }, 80);
     });
     ro.observe(container);
@@ -222,17 +151,17 @@ async function boot() {
   window.opendrop = app; // debug handle (also used by preview-based UI verification)
   initPlacePanel(map);
 
-  // B6 insets, then the opening frame — IN THAT ORDER. initList already opened the desktop rail
-  // above; syncInsets() settles the container box SYNCHRONOUSLY (the MutationObserver variant is
-  // a microtask and hasn't run yet inside this task), so fitToCoverage frames the US in the box
-  // the user will actually see, not the full width the rail is about to cover.
+  // B6 insets, then the opening frame — IN THAT ORDER. syncInsets() settles the container box
+  // SYNCHRONOUSLY so fitToCoverage frames the US in the box the user will actually see.
   const syncInsets = initMapInsets(map);
   syncInsets();
   fitToCoverage(map, meta.coverage);
-  await refresh();
 
-  // First-visit welcome hero (POTD-backed, closable, shown once). Fire-and-forget: it self-fetches
-  // /api/potd and no-ops if already dismissed or POTD is unavailable — never blocks map startup.
+  await loadAll();                     // fetch the whole set + first paint for the framed view
+  map.on("moveend", debouncedRender);  // wired AFTER the first paint so boot's setView doesn't
+  map.on("resize", debouncedRender);   // trigger an empty pre-data render
+
+  // First-visit welcome hero (POTD-backed, closable, shown once). Fire-and-forget.
   maybeShowWelcomeHero();
 
   // Deep link: #bin/<id> opens the place panel directly — free shareable bin links.

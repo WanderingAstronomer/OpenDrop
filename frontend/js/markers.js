@@ -1,85 +1,64 @@
 import { bucketColor } from "./confidence.js";
 import { openPlacePanel, panelOnceClose } from "./panel.js";
 import { onThemeChange } from "./theme.js";
-import {
-  REGION_COLLAPSE_SPAN_DEG, binPoints, bubbleSize, computeDiff, formatCount, isNationalView,
-  partitionRegions, prefersReducedMotion,
-} from "./viewport.js";
+import { bubbleSize, computeDiff, expandBbox, formatCount, prefersReducedMotion } from "./viewport.js";
+
+// ONE clustering engine: Mapbox Supercluster (vendored UMD -> global `Supercluster`), client-side.
+// The whole active set is loaded once (main.js) and clustered per view here: clusters sit at the
+// weighted CENTROID of their members and merge by proximity as you zoom, so there is no server grid,
+// no fixed lattice, and one consistent behaviour at every zoom. Individual pins draw on a shared
+// canvas (one paint pass, flat hit-testing); the few pins with an open community proposal draw on a
+// shared SVG renderer so their .odc-pending keyframe (an animated SVG filter) still runs — canvas has
+// no per-marker DOM node to animate.
 
 let map = null;
-let clusterGroup = null;
-let serverLayer = null;
-
-// Two SHARED renderers, created in initMarkers before any marker references them. The bulk of the
-// point markers draw onto ONE canvas (one <canvas>, one paint pass, flat hit-testing) — the whole
-// point of B-1. The few pins with an open community proposal draw onto a shared SVG renderer so
-// their .odc-pending keyframe (which animates the SVG <path>'s filter) still works — canvas has no
-// per-marker DOM node to animate. getRenderer() honors each marker's options.renderer first, so the
-// two coexist inside the same markercluster group (verified against the vendored Leaflet 1.9.4).
+let index = null;        // the Supercluster index (rebuilt on load / type-filter change)
+let clusterLayer = null; // cluster bubbles (DOM divIcons)
+let pointLayer = null;   // individual pins (canvas circleMarkers; svg for pending)
 let canvasRenderer = null;
 let svgRenderer = null;
 
-// Idempotency memo: render() early-returns when the same data object comes back (an over-fetch cache
-// hit re-presenting) so a pan/zoom settle no longer tears down and rebuilds every marker. Points are
-// zoom/size-independent, so points-mode returns on data identity alone; cluster BUBBLES are pixel-
-// binned, so clusters-mode must also re-bin when zoom / container size / national-ness changes.
-let lastData = null, lastMode = null, lastZoom = null, lastSizeKey = null, lastNational = null;
-
-// id -> the live circleMarker currently in clusterGroup, so consecutive fetches diff instead of
-// rebuild (survivors are reused untouched) and the selection ring can be re-found by id.
+// id -> the live point circleMarker currently drawn, so consecutive renders DIFF instead of rebuild
+// (a pan reuses survivors untouched) and the selection ring can be re-found by id after a rebuild.
 const idMap = new Map();
-let selectedId = null; // id of the pin whose place panel is open — its ring is re-applied by id
+let selectedId = null;
 
-// Bin server cluster cells onto this screen-pixel grid before drawing. The server clusters in
-// DEGREES (bbox-span/32), so a busy national/state view can return hundreds of cells; legibility
-// depends on PIXELS. 64px sits between Supercluster's 40px and Leaflet.markercluster's 80px
-// defaults, and caps visual density by screen size instead of data density.
-const BIN_PX = 64;
-
-function clusterIcon(cluster) {
-  const n = cluster.getChildCount();
-  const size = n < 10 ? 34 : n < 50 ? 40 : 48;
-  return L.divIcon({
-    html: `<div class="odc-cluster" style="width:${size}px;height:${size}px">${n}</div>`,
-    className: "",
-    iconSize: [size, size],
-  });
-}
+// Supercluster tuning. radius 60px: a bit coarser than a stock 40px so dense metros collapse into
+// fewer, cleaner bubbles (the "too many notes" report) and adjacent bubbles — capped at 56px
+// (BUBBLE_MAX_PX) — stay clear of each other; still finer than markercluster's 80px default. maxZoom
+// 16 = clusters fully break into individual pins at street level; minPoints 2 = never bubble one pin.
+const SC_OPTS = { radius: 60, maxZoom: 16, minPoints: 2 };
+const SC_MAX_ZOOM = 16;
+// Cluster/paint a slightly larger box than the viewport so pins just off the edge exist for short
+// pans (matches the canvas renderer's padding); the list stays honest to the exact viewport (main.js).
+const RENDER_MARGIN = 1.4;
 
 export function initMarkers(m) {
   map = m;
-  // markercluster's split/merge slide animates every marker's position on each cluster change —
-  // hundreds of individually compositing transitions, the worst of the zoom-frame cost on a phone.
-  // Off on mobile (clusters snap to their new positions instead of sliding); kept on desktop.
-  // Init-time only, paired with the map's markerZoomAnimation flag in map.js.
-  const isMobile = !!(window.matchMedia && window.matchMedia("(max-width: 1023px)").matches);
-  // padding 0.2 (renderer surface = viewport * 1.4/axis, ~2x area): a small margin so pins just off
-  // the edge are pre-painted for short pans, without the 4x-area canvas that padding 0.5 balloons to
-  // on large/retina screens. The 1.5x over-fetch DATA cache already covers longer pans.
+  // padding 0.2: pre-paint a small margin around the viewport without the 4x-area canvas that
+  // padding 0.5 balloons to on retina screens (the 1.4x render margin covers longer off-edge pins).
   canvasRenderer = L.canvas({ tolerance: 6, padding: 0.2 }).addTo(map);
   svgRenderer = L.svg({ padding: 0.2 }).addTo(map);
-  clusterGroup = L.markerClusterGroup({
-    chunkedLoading: true,
-    maxClusterRadius: 40,        // looser grouping than the default 80 -> neighborhoods separate sooner
-    disableClusteringAtZoom: 16, // street level -> always individual pins (good for bins)
-    showCoverageOnHover: false,  // drop the distracting blue coverage polygon
-    spiderfyOnMaxZoom: true,
-    iconCreateFunction: clusterIcon,
-    animate: !isMobile,          // A4 — no per-marker cluster animation on mobile
-  });
-  map.addLayer(clusterGroup);
-  serverLayer = L.layerGroup().addTo(map);
-  lastData = null; lastMode = null; idMap.clear();
+  clusterLayer = L.layerGroup().addTo(map);
+  pointLayer = L.layerGroup().addTo(map);
+  index = null; idMap.clear(); selectedId = null;
   // A theme swap changes --accent; the canvas won't repaint the selected ring on its own, so re-style
   // the live selection when the theme flips.
   onThemeChange(() => { const m2 = idMap.get(selectedId); if (m2) m2.setStyle({ color: accentHex(), weight: 3.5 }); });
 }
 
+// (Re)build the clustering index from a point-feature array. Called once after the initial load and
+// again when the type filter changes the visible set — load() is a fresh kdbush build, a few ms for
+// the whole US set, so re-filtering is instant with no server hit. Does NOT paint; the caller renders.
+export function loadPoints(features) {
+  const SC = window.Supercluster;
+  index = SC ? new SC(SC_OPTS).load(features || []) : null;
+}
+
 // --- selection ring (canvas-safe) --------------------------------------------------------------
-// A canvas circleMarker has no per-marker DOM <path>, so the old CSS .marker-selected class can't
-// ride it. Instead setStyle the tracked marker to the accent ring, and restore its captured base
-// style on deselect. Colors must be concrete (SVG presentation attrs / the canvas ctx can't resolve
-// var()), so --accent is read from the computed root style at apply time (stays theme-aware).
+// A canvas circleMarker has no per-marker DOM <path>, so a CSS class can't ride it. Instead setStyle
+// the tracked marker to the accent ring and restore its captured base style on deselect. Colors must
+// be concrete (the canvas ctx can't resolve var()), so --accent is read at apply time (theme-aware).
 function accentHex() {
   return getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#2b6cb0";
 }
@@ -98,8 +77,8 @@ function makePointMarker(f) {
   const [lon, lat] = f.geometry.coordinates;
   const p = f.properties;
   const pending = !!p.has_pending;
-  // Pending pins carry their violet stroke as their BASE style (the CSS .odc-pending stroke rule was
-  // dropped so setStyle-selection can override it); the keyframe still animates their filter.
+  // Pending pins carry their violet stroke as their BASE style (so setStyle-selection can override it
+  // and restore it); the keyframe still animates their filter on the SVG node.
   const base = pending ? { color: "#a855f7", weight: 2 } : { color: "#ffffff", weight: 2 };
   const marker = L.circleMarker([lat, lon], {
     renderer: pending ? svgRenderer : canvasRenderer,
@@ -121,14 +100,14 @@ function makePointMarker(f) {
   return marker;
 }
 
-// --- server cluster bubbles (DOM divIcons) -----------------------------------------------------
-// Build (but do NOT add) a bubble marker. Diameter scales with the log of the count (bubbleSize,
-// capped below BIN_PX so pixel-merged neighbours never touch); the label is pre-formatted. The caller
-// batches the returned markers into serverLayer in one pass.
-function makeBubble(lat, lon, count, label, onClick, extraClass = "") {
+// --- cluster bubbles (DOM divIcons) ------------------------------------------------------------
+// Build (but do NOT add) a bubble marker. Diameter scales with log(count) (bubbleSize, capped below
+// BIN_PX so neighbours never touch); the label is pre-formatted (formatCount). The caller batches the
+// returned markers into clusterLayer in one pass.
+function makeBubble(lat, lon, count, label, onClick) {
   const size = bubbleSize(count);
   const icon = L.divIcon({
-    html: `<div class="odc-cluster ${extraClass}" style="width:${size}px;height:${size}px">${label}</div>`,
+    html: `<div class="odc-cluster" style="width:${size}px;height:${size}px">${label}</div>`,
     className: "",
     iconSize: [size, size],
   });
@@ -137,101 +116,60 @@ function makeBubble(lat, lon, count, label, onClick, extraClass = "") {
   return m;
 }
 
-const sizeKey = () => { const s = map.getSize(); return `${s.x}x${s.y}`; };
-
-// `bbox` is the sanitized [w,s,e,n] viewport — its longitude span decides the national collapse.
-export function render(data, bbox) {
-  if (!data) {
-    clusterGroup.clearLayers();
-    serverLayer.clearLayers();
+// Paint clusters + individual pins for the current view straight from the Supercluster index. No
+// fetch — the whole active set is client-side. Cluster bubbles are rebuilt each call (their ids are
+// per-zoom); individual pins are diffed by id so a pan reuses survivors (the canvas isn't torn down).
+export function renderView(bbox, zoom) {
+  if (!index || !bbox) {
+    // Nothing to show (pre-load, or a view flung into the noWrap void past ±180): clear everything.
+    clusterLayer.clearLayers();
+    pointLayer.clearLayers();
     idMap.clear();
-    lastData = null; lastMode = null;
     return;
   }
+  const z = Math.min(Math.floor(zoom), SC_MAX_ZOOM); // Supercluster wants an int zoom; map uses 0.25 steps
+  const cells = index.getClusters(expandBbox(bbox, RENDER_MARGIN), z);
 
-  const mode = data.mode;
-  const national = mode === "clusters" ? isNationalView(bbox) : null;
-  const z = map.getZoom();
-  const sk = sizeKey();
-
-  // Idempotent guard (A1): the same fetched object re-presenting (a cache-hit pan) rebuilds nothing.
-  if (data === lastData && mode === lastMode) {
-    if (mode !== "clusters") return; // points: positions are zoom/size-independent
-    if (z === lastZoom && sk === lastSizeKey && national === lastNational) return; // clusters: re-bin only on change
-  }
-  // Mode flip -> the two structures hold the wrong kind of layer; hard-reset before building.
-  if (mode !== lastMode) {
-    clusterGroup.clearLayers();
-    serverLayer.clearLayers();
-    idMap.clear();
-  }
-
-  if (mode === "clusters") {
-    serverLayer.clearLayers();
-    const cells = data.clusters || [];
-    const bubbles = [];
-
-    if (national) {
-      // National view, decided by width/zoom ALONE (pan-invariant — see viewport.isNationalView).
-      // Collapse to at most three fixed-anchor region bubbles (AK / HI / CONUS), the albersUsa inset
-      // convention; they pan with the map, so dragging the edge no longer toggles bubbles<->cells.
-      // Click flies into the region at a zoom deep enough to EXIT the national view on any screen
-      // width (a fixed target zoom dead-ends on wide monitors, where even zoom 5 still spans >= the
-      // collapse threshold).
-      partitionRegions(cells).forEach((r) => {
-        bubbles.push(makeBubble(r.lat, r.lon, r.count, formatCount(r.count), () => {
-          const px = map.getSize().x || 1024;
-          const exitZoom = Math.max(r.zoom,
-            Math.ceil(Math.log2((px * 360) / (256 * REGION_COLLAPSE_SPAN_DEG))));
-          map.flyTo([r.lat, r.lon], exitZoom, { animate: !prefersReducedMotion() });
-        }, "odc-region"));
-      });
+  // Cluster bubbles: full rebuild (cheap — a few hundred DOM divIcons at most).
+  clusterLayer.clearLayers();
+  const points = [];
+  const bubbles = [];
+  for (const c of cells) {
+    if (c.properties.cluster) {
+      const [lon, lat] = c.geometry.coordinates;
+      const count = c.properties.point_count;
+      const cid = c.properties.cluster_id;
+      bubbles.push(makeBubble(lat, lon, count, formatCount(count), () => {
+        // Zoom to exactly where this cluster breaks apart (Supercluster knows), capped at maxZoom;
+        // never zoom OUT (a dense cluster's expansion zoom can equal the current zoom).
+        const ez = Math.min(index.getClusterExpansionZoom(cid), SC_MAX_ZOOM);
+        map.flyTo([lat, lon], Math.max(ez, map.getZoom() + 0.5), { animate: !prefersReducedMotion() });
+      }));
     } else {
-      // Below national, the server (B8) hands back one of two tiers, both CENTROID-positioned:
-      //  - "state": one bubble per state at its centroid — render AS-IS. Pixel-binning here would
-      //    merge nearby states (New England) into one bubble, which the owner asked to keep distinct.
-      //  - "grid" (or a legacy z-less response): one centroid per zoom-sized cell. binPoints then
-      //    caps on-screen density and de-overlaps any two centroids closer than BIN_PX — binned in
-      //    ABSOLUTE world pixels (map.project), so the grid is pan-invariant and bubbles don't jump.
-      const outCells = data.tier === "state"
-        ? cells
-        : binPoints(cells.map((c) => {
-          const p = map.project([c.lat, c.lon], z);
-          return { x: p.x, y: p.y, lat: c.lat, lon: c.lon, count: c.count };
-        }), BIN_PX);
-      outCells.forEach((c) => {
-        bubbles.push(makeBubble(c.lat, c.lon, c.count, formatCount(c.count),
-          () => map.flyTo([c.lat, c.lon], Math.min(map.getZoom() + 3, 16), { animate: !prefersReducedMotion() })));
-      });
+      points.push(c); // an unclustered leaf: getClusters returns the ORIGINAL point feature
     }
-    // serverLayer is a plain L.layerGroup (no bulk addLayers); a few hundred DOM bubbles add cheaply.
-    bubbles.forEach((b) => serverLayer.addLayer(b));
-  } else {
-    // Points mode: diff by id and reuse survivors — only truly new pins are built, only truly gone
-    // pins are removed. Bulk add/remove so markercluster's chunkedLoading spreads the work.
-    const { gone, fresh } = computeDiff(idMap, data.features || []);
-    // A has_pending flip on a SURVIVING pin (e.g. a move proposal opens/resolves via forceRefresh)
-    // must migrate it between the svg (pending) and canvas (normal) renderers and swap its base
-    // stroke + pulse. computeDiff keys on id alone and treats it as an untouched survivor, so detect
-    // the flip here and route those pins through remove+re-add onto the correct renderer.
-    const goneNow = gone.slice();
-    const freshNow = fresh.slice();
-    (data.features || []).forEach((f) => {
-      const m = idMap.get(f.properties.id);
-      if (m && m.__odPending !== !!f.properties.has_pending) { goneNow.push(m); freshNow.push(f); }
-    });
-    if (goneNow.length) {
-      clusterGroup.removeLayers(goneNow);
-      goneNow.forEach((m) => idMap.delete(m.__odId));
-    }
-    if (freshNow.length) {
-      const made = freshNow.map(makePointMarker);
-      clusterGroup.addLayers(made);
-      made.forEach((m) => idMap.set(m.__odId, m));
-    }
-    const sel = idMap.get(selectedId);
-    if (sel) sel.setStyle({ color: accentHex(), weight: 3.5 }); // keep the open pin ringed after a diff
   }
+  bubbles.forEach((b) => clusterLayer.addLayer(b));
 
-  lastData = data; lastMode = mode; lastZoom = z; lastSizeKey = sk; lastNational = national;
+  // Individual pins: diff by id, reuse survivors, build/remove only the delta — and migrate any pin
+  // whose has_pending flipped between the canvas and svg renderers (computeDiff keys on id alone and
+  // would otherwise treat that as an untouched survivor).
+  const { gone, fresh } = computeDiff(idMap, points);
+  const goneNow = gone.slice();
+  const freshNow = fresh.slice();
+  points.forEach((f) => {
+    const m = idMap.get(f.properties.id);
+    if (m && m.__odPending !== !!f.properties.has_pending) { goneNow.push(m); freshNow.push(f); }
+  });
+  if (goneNow.length) {
+    goneNow.forEach((m) => pointLayer.removeLayer(m));
+    goneNow.forEach((m) => idMap.delete(m.__odId));
+  }
+  if (freshNow.length) {
+    const made = freshNow.map(makePointMarker);
+    made.forEach((m) => pointLayer.addLayer(m));
+    made.forEach((m) => idMap.set(m.__odId, m));
+  }
+  const sel = idMap.get(selectedId);
+  if (sel) sel.setStyle({ color: accentHex(), weight: 3.5 }); // keep the open pin ringed after a diff
 }

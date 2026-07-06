@@ -1,13 +1,12 @@
-// Unit tests for js/viewport.js — the pure bbox/cluster-view helpers that keep every /api/locations
+// Unit tests for js/viewport.js — the pure bbox/marker helpers that keep every /api/locations
 // request valid (Leaflet getBounds() legally exceeds ±180 at low zooms; unsized containers yield
-// point bounds) and keep wide views legible (region collapse, pixel binning).
+// point bounds) and keep the client render honest (coverage gate, bbox filtering, marker diffing).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  sanitizeBbox, expandBbox, bboxContains, bboxIntersects, filterFeaturesToBbox, inUSCoverage,
-  isNationalView, partitionRegions, regionOf, binPoints, bubbleSize, BUBBLE_MAX_PX, formatCount,
-  REGIONS, US_DATA_ENVELOPE, prefersReducedMotion, cacheHit, computeDiff,
+  sanitizeBbox, expandBbox, bboxIntersects, filterFeaturesToBbox, inUSCoverage,
+  bubbleSize, BUBBLE_MAX_PX, formatCount, US_DATA_ENVELOPE, prefersReducedMotion, computeDiff,
 } from "../js/viewport.js";
 
 // --- sanitizeBbox ---------------------------------------------------------------------------
@@ -103,35 +102,7 @@ test("inUSCoverage: real data territory counts, the envelope's empty ocean paddi
   assert.equal(inUSCoverage(null), false);
 });
 
-// --- isNationalView (region-collapse gate) ----------------------------------------------------
-
-test("isNationalView: wide views collapse to region bubbles", () => {
-  assert.equal(isNationalView([-180, 10.8, -8.2, 64.9]), true);   // wide-monitor default view
-  assert.equal(isNationalView([-143, 15, -53, 65]), true);        // laptop min-zoom view
-});
-
-test("isNationalView is pan-invariant — a wide view collapses wherever it is panned", () => {
-  // Regression for the owner's report: the old width+containment gate flipped bubbles<->cells the
-  // instant a corner (e.g. Maine) left the screen. Collapse is now width-only, so the same-width
-  // view collapses whether centered OR pinned west toward Alaska (67.5° wide — previously `false`).
-  assert.equal(isNationalView([-143, 15, -53, 65]), true);        // centered, 90° wide
-  assert.equal(isNationalView([-180, 32, -112.5, 57]), true);     // pinned toward Alaska, 67.5° wide
-});
-
-test("isNationalView flips at the width threshold, independent of pan position", () => {
-  // just under 65° -> cells; just over -> bubbles; same widths panned to the far east decide the same
-  assert.equal(isNationalView([-100, 30, -35.1, 45]), false);     // 64.9° wide
-  assert.equal(isNationalView([-100, 30, -34.9, 45]), true);      // 65.1° wide
-  assert.equal(isNationalView([-135.1, 30, -70, 45]), true);      // 65.1° wide, panned east
-  assert.equal(isNationalView([-134.9, 30, -70, 45]), false);     // 64.9° wide, panned east
-});
-
-test("isNationalView: narrow views and null never collapse", () => {
-  assert.equal(isNationalView([-85, 38, -80, 42]), false);
-  assert.equal(isNationalView(null), false);
-});
-
-// --- expandBbox / bboxContains / filterFeaturesToBbox ----------------------------------------
+// --- expandBbox / filterFeaturesToBbox --------------------------------------------------------
 
 test("expandBbox grows around the center and stays inside the world", () => {
   assert.deepEqual(expandBbox([-10, -10, 10, 10], 1.5), [-15, -15, 15, 15]);
@@ -139,73 +110,19 @@ test("expandBbox grows around the center and stays inside the world", () => {
   assert.ok(clamped[0] >= -180 && clamped[2] <= 180 && clamped[3] <= 90);
 });
 
-test("bboxContains: expanded fetch area contains any smaller pan inside it", () => {
-  const fetched = expandBbox([-84, 39, -82, 41], 1.4);
-  assert.ok(bboxContains(fetched, [-84, 39, -82, 41]));       // original viewport
-  assert.ok(bboxContains(fetched, [-84.3, 38.9, -82.3, 40.9])); // small pan
-  assert.ok(!bboxContains(fetched, [-90, 39, -82, 41]));        // big jump escapes
-});
-
-test("filterFeaturesToBbox keeps the list panel's 'in view' honest after over-fetch", () => {
+test("filterFeaturesToBbox keeps the list panel's 'in view' honest after the render margin", () => {
   const feats = [
     { geometry: { coordinates: [-83.0, 40.0] } },  // in view
-    { geometry: { coordinates: [-85.0, 40.0] } },  // fetched margin, out of view
+    { geometry: { coordinates: [-85.0, 40.0] } },  // render margin, out of view
   ];
   assert.equal(filterFeaturesToBbox(feats, [-84, 39, -82, 41]).length, 1);
-});
-
-// --- region collapse ---------------------------------------------------------------------------
-
-test("regionOf classifies Anchorage, Honolulu, Columbus, and San Juan", () => {
-  assert.equal(regionOf(61.2, -149.9), "ak");
-  assert.equal(regionOf(21.3, -157.8), "hi");
-  assert.equal(regionOf(39.96, -82.99), "conus");
-  assert.equal(regionOf(18.4, -66.1), "conus"); // Puerto Rico rides with the main map
-});
-
-test("partitionRegions sums cluster cells into fixed-anchor region bubbles, dropping empties", () => {
-  const cells = [
-    { lat: 61.0, lon: -150.0, count: 40 },
-    { lat: 64.8, lon: -147.7, count: 10 },
-    { lat: 40.0, lon: -83.0, count: 900 },
-  ];
-  const out = partitionRegions(cells);
-  assert.deepEqual(
-    out.map(({ key, count, lat, lon }) => ({ key, count, lat, lon })).sort((a, b) => a.key.localeCompare(b.key)),
-    [
-      { key: "ak", count: 50, lat: REGIONS.ak.lat, lon: REGIONS.ak.lon },
-      { key: "conus", count: 900, lat: REGIONS.conus.lat, lon: REGIONS.conus.lon },
-    ],
-  );
-});
-
-// --- pixel binning ------------------------------------------------------------------------------
-
-test("binPoints merges cells that share a screen-grid cell at the weighted centroid", () => {
-  const out = binPoints([
-    { x: 10, y: 10, lat: 40.0, lon: -83.0, count: 30 },
-    { x: 60, y: 40, lat: 41.0, lon: -84.0, count: 10 },   // same 72px cell as above
-    { x: 500, y: 500, lat: 35.0, lon: -100.0, count: 5 }, // far away, own cell
-  ], 72);
-  assert.equal(out.length, 2);
-  const merged = out.find((b) => b.count === 40);
-  assert.ok(Math.abs(merged.lat - 40.25) < 1e-9);  // (40*30 + 41*10)/40
-  assert.ok(Math.abs(merged.lon - (-83.25)) < 1e-9);
-});
-
-test("binPoints leaves already-sparse cells untouched", () => {
-  const out = binPoints([
-    { x: 0, y: 0, lat: 40, lon: -83, count: 3 },
-    { x: 300, y: 300, lat: 41, lon: -82, count: 4 },
-  ], 72);
-  assert.equal(out.length, 2);
 });
 
 // --- cluster bubble sizing (de-overlap invariant) -----------------------------------------------
 
 test("bubbleSize grows with count but never exceeds the de-overlap cap", () => {
-  // The cap is the load-bearing de-overlap guarantee: a bubble stays smaller than the 64px screen
-  // grid the frontend merges centroids onto, so two merged neighbours (>=1 bin apart) can't touch.
+  // The cap is the load-bearing de-overlap guarantee: a bubble stays at/below Supercluster's cluster
+  // radius so two adjacent cluster bubbles can't touch.
   for (const n of [0, 1, 5, 50, 500, 5000, 500000]) {
     const s = bubbleSize(n);
     assert.ok(s <= BUBBLE_MAX_PX, `size ${s} for count ${n} exceeds the cap`);
@@ -254,68 +171,10 @@ test("prefersReducedMotion reflects matchMedia and defaults to false when unavai
   }
 });
 
-// --- cacheHit (over-fetch cache predicate) ------------------------------------------------------
-// Asserts the frozen truth table from the render-perf spec §1.3. cacheHit decides whether the live
-// viewport can be served from the last fetched `data` with NO refetch. Fixtures: P() builds a POINTS
-// cache, C() a CLUSTERS cache, V() a live view. BIG⊇SMALL (SMALL sits inside BIG); GROWN is NOT
-// inside BIG.
-const P = (bbox, zoom, types = null, national = false) =>
-  ({ bbox, zoom, types, national, data: { mode: "points" } });
-const C = (bbox, zoom, types = null, national = false) =>
-  ({ bbox, zoom, types, national, data: { mode: "clusters" } });
-const V = (bbox, zoom, types = null, national = false) => ({ bbox, zoom, types, national });
-const BIG = [-100, 30, -80, 45], SMALL = [-95, 33, -85, 42], GROWN = [-110, 20, -70, 55];
-
-test("cacheHit: null cache -> false", () => {
-  assert.equal(cacheHit(null, V(SMALL, 12)), false);
-});
-
-test("cacheHit: types mismatch -> false", () => {
-  assert.equal(cacheHit(P(BIG, 14, "drop_bin"), V(SMALL, 14, null)), false);
-});
-
-test("cacheHit: national mismatch -> false (AK/HI safety)", () => {
-  assert.equal(cacheHit(P(BIG, 14, null, false), V(SMALL, 14, null, true)), false);
-});
-
-test("cacheHit: points regional, contained, DIFFERENT zoom -> true (A2 zoom-tolerant)", () => {
-  assert.equal(cacheHit(P(BIG, 14), V(SMALL, 16)), true);
-});
-
-test("cacheHit: points regional, grown out of cache bbox, same zoom -> false", () => {
-  assert.equal(cacheHit(P(BIG, 14), V(GROWN, 14)), false);
-});
-
-test("cacheHit: clusters, contained, different zoom -> false (binning is zoom-dependent)", () => {
-  assert.equal(cacheHit(C(BIG, 10), V(SMALL, 11)), false);
-});
-
-test("cacheHit: clusters, contained, same zoom -> true (strict hit)", () => {
-  assert.equal(cacheHit(C(BIG, 10), V(SMALL, 10)), true);
-});
-
-test("cacheHit: national both, same zoom -> true", () => {
-  assert.equal(cacheHit(C(BIG, 5, null, true), V(SMALL, 5, null, true)), true);
-});
-
-test("cacheHit: national both, different zoom -> false", () => {
-  assert.equal(cacheHit(C(BIG, 5, null, true), V(SMALL, 6, null, true)), false);
-});
-
-test("cacheHit: points cache but view is national -> false (!view.national guard)", () => {
-  assert.equal(cacheHit(P(BIG, 14, null, false), V(SMALL, 14, null, true)), false);
-});
-
-test("cacheHit: undefined data falls back to strict rule", () => {
-  const c = { bbox: BIG, zoom: 14, types: null, national: false, data: undefined };
-  assert.equal(cacheHit(c, V(SMALL, 14)), true);   // strict: same zoom + contained
-  assert.equal(cacheHit(c, V(SMALL, 16)), false);  // strict: zoom differs
-});
-
 // --- computeDiff (survivor/gone/fresh partition) ------------------------------------------------
-// Spec §1.2: partition an id-keyed marker map against an incoming feature list into markers to REMOVE
-// (gone) and features to ADD (fresh), so render() reuses survivors instead of clearing + rebuilding.
-// Pure: plain Map + feature-like objects, no Leaflet/DOM.
+// Partition an id-keyed marker map against an incoming feature list into markers to REMOVE (gone) and
+// features to ADD (fresh), so renderView reuses survivors instead of clearing + rebuilding. Pure:
+// plain Map + feature-like objects, no Leaflet/DOM.
 const feat = (id) => ({ properties: { id }, geometry: { coordinates: [0, 0] } });
 const mk = (id) => ({ __odId: id });
 
