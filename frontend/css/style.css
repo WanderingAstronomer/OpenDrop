@@ -223,10 +223,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 
 /* ============================ MAP CHROME ================================== */
 
-/* Popovers (z40) + the shared click-away backdrop (z39). The confidence legend and the basemap
-   picker both live here now, opened from the top-bar action cluster (or the mobile FABs) — nothing
-   is permanently parked over the map corners anymore. */
-.pop-backdrop { position: fixed; inset: 0; z-index: calc(var(--z-pop) - 1); background: transparent; }
+/* Popovers (z40). The confidence legend and the basemap picker both live here now, opened from
+   the top-bar action cluster — nothing is permanently parked over the map corners anymore.
+   Outside-press close is wired in js/chrome.js (no blocking backdrop layer: a full-screen
+   click-away div stacked above the top bar and swallowed the rail's own buttons). */
 /* Popovers open to the LEFT of the menu rail (which is ~44px wide at the right gutter). */
 .map-pop {
   position: fixed; top: calc(env(safe-area-inset-top) + 64px); right: 66px; z-index: var(--z-pop);
@@ -303,8 +303,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 
 /* ---- TOP BAR (z30) -----------------------------------------------------------------------------
    The redesign's chrome bar: brand | flex search | action cluster. Desktop (>=1024px): a full-width
-   64px surface the side rails tuck under (rails start at top:64). Mobile: a floating row on a
-   gradient scrim with safe-area padding. Flex means nothing can overlap — the search shrinks, never
+   64px surface the side rails tuck under (rails start at top:64). Mobile: a transparent floating
+   row with safe-area padding. Flex means nothing can overlap — the search shrinks, never
    slides. pointer-events:none keeps any empty band click-through; children re-enable events. */
 .topbar {
   position: fixed; top: 0; left: 0; right: 0; z-index: var(--z-bar);
@@ -316,18 +316,25 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 }
 .topbar > * { pointer-events: auto; }
 
-/* Brand lockup. Desktop shows the wordmark; mobile shows the dedicated square icon (below). */
-.brand { flex: 0 0 auto; line-height: 0; }
+/* Brand lockup — a BUTTON: tapping the logo re-opens the welcome/about card (js/chrome.js).
+   Desktop shows the wordmark; mobile shows the dedicated square icon (below). */
+.brand {
+  flex: 0 0 auto; line-height: 0; appearance: none;
+  background: none; border: none; padding: 0; cursor: pointer;
+}
+@media (hover: hover) { .brand:hover img { opacity: .82; } }
+/* The mobile card rule below declares its own box-shadow, which out-cascades the global
+   :focus-visible ring (the documented chrome-button trap) — restore the ring explicitly. */
+.brand:focus-visible { box-shadow: var(--focus), var(--shadow-sm); }
 .brand-icon { display: none; }
 .brand-logo { display: block; height: 44px; width: auto; }
-/* Mobile: the bar floats on a scrim instead of being a solid surface, and the brand crops to a
-   44px icon-only card (the wordmark art is the right two-thirds of the image). */
+/* Mobile: the bar floats fully transparent over the map (no scrim — the logo card, search field,
+   and menu button each carry their own surface), and the brand is a 44px icon-only card. */
 @media (max-width: 1023px) {
   .topbar {
     height: auto; align-items: center; gap: 8px;
     padding: calc(env(safe-area-inset-top) + 10px) 12px 10px;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, transparent),
-                color-mix(in srgb, var(--surface) 40%, transparent) 80%, transparent);
+    background: none;
     border-bottom: none; backdrop-filter: none; -webkit-backdrop-filter: none;
   }
   /* Mobile: the dedicated square icon in a card — no more cropping the wordmark into an "icon". */
@@ -763,8 +770,10 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
     background: var(--border-2); margin: 12px auto 0;
   }
   .pp-tab, .list-tab { display: none; }
-  /* FABs ride above the resting sheet; the zoom pill yields to pinch on touch layouts */
-  .zoom-ctl { display: none; }
+  /* FABs ride above the resting sheet; the zoom pill yields to pinch on touch layouts.
+     (.map-ctl-br prefix is REQUIRED: the base .zoom-ctl rule sits LATER in the file, so a
+     bare same-specificity .zoom-ctl here loses the cascade and the pill reappears.) */
+  .map-ctl-br .zoom-ctl { display: none; }
   .map-ctl-br { bottom: calc(env(safe-area-inset-bottom) + max(92px, 13dvh) + 12px); }
   /* (legend/theme/layers live in the top-right menu rail on all sizes now — no bottom-left FABs) */
   /* attribution pill sits just above the resting sheet */
@@ -892,10 +901,12 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
 
 /* ---- Picture-of-the-day placeholder (shown when a place has no community photos) ---- */
 .potd-placeholder { margin-top: 0; }
-.potd-placeholder a { display: block; border-radius: 12px; overflow: hidden; }
+.potd-placeholder a { display: block; }
+/* Full aspect ratio, letterboxed within a height cap and centered — never cropped to a banner
+   (same treatment as the welcome hero's .welcome-media img). */
 .potd-placeholder img {
-  width: 100%; height: 158px; object-fit: cover; display: block;
-  background: var(--surface-2); border: 1px solid var(--border);
+  display: block; max-width: 100%; max-height: 280px; width: auto; height: auto; margin: 0 auto;
+  border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border);
 }
 /* Photo-of-the-day caption inside the detail panel: match the design's 12px muted centered line
    (the shared .potd-credit stays 11px in the welcome hero). */
@@ -929,8 +940,9 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
 }
 
 /* ============================ WELCOME HERO ============================= */
-/* First-visit greeting: a CENTERED card on a light scrim, dismissible every way (✕ / Got it /
-   Escape / scrim click), shown once. Full-aspect POTD image (not cropped); centered copy. */
+/* First-visit greeting: a CENTERED card on a light scrim, dismissible via "Got it" / Escape /
+   scrim click (no ✕ — it overlapped the artwork), shown once. Full-aspect POTD image (not
+   cropped); centered copy. */
 .welcome-overlay {
   position: fixed; inset: 0; z-index: 1600; display: flex; align-items: center; justify-content: center;
   padding: 20px; background: rgba(8, 12, 18, 0.5);
@@ -943,14 +955,6 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
   border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow);
   animation: welcome-in 0.22s cubic-bezier(.2, .7, .3, 1);
 }
-.welcome-x {
-  position: absolute; top: 8px; right: 8px; z-index: 1;
-  width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
-  padding: 0; border: none; border-radius: 8px; cursor: pointer;
-  font-size: 16px; line-height: 1; color: #fff; background: rgba(0, 0, 0, 0.45);
-}
-.welcome-x:hover { background: rgba(0, 0, 0, 0.65); }
-.welcome-x:focus-visible { box-shadow: var(--focus); outline: none; }
 /* Full aspect ratio: letterboxed within a height cap, centered — never cropped to a banner. */
 .welcome-media { display: block; padding: 16px 16px 0; }
 .welcome-media img {
@@ -1165,4 +1169,13 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
    2.5.8). Must follow the base .search-clear rule to win, hence its home here. */
 @media (pointer: coarse) {
   .search-clear { width: 28px; height: 28px; font-size: 12px; }
+}
+
+/* Toasts + the status banner: the 1.25x chrome zoom (UI SCALE, top of file) reads comically large
+   on a ~400px phone — un-zoom them there and swap the /1.25 width formulas for plain viewport
+   units. Lives here (late) so the early UI SCALE + base component rules can't out-cascade it. */
+@media (max-width: 1023px) {
+  .map-status, .toast-host { zoom: 1; }
+  .map-status { font-size: 12.5px; max-width: 85vw; }
+  .toast { font-size: 12.5px; max-width: 85vw; }
 }

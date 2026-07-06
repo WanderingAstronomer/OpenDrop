@@ -21,7 +21,6 @@ export function initChrome() {
   const infoBtn = document.getElementById("info-btn");
   const layersPop = document.getElementById("layers-pop");
   const legendPop = document.getElementById("legend-pop");
-  const backdrop = document.getElementById("pop-backdrop");
   if (!menuBtn || !rail) return;
 
   const pops = [[layersBtn, layersPop], [legendBtn, legendPop]];
@@ -33,18 +32,26 @@ export function initChrome() {
     closePops();
     rail.hidden = true;
     menuBtn.setAttribute("aria-expanded", "false");
-    if (backdrop) backdrop.hidden = true;
   };
 
-  // Hamburger toggles the rail, backed by a transparent click-away layer.
   menuBtn.addEventListener("click", () => {
     if (rail.hidden) {
       rail.hidden = false;
       menuBtn.setAttribute("aria-expanded", "true");
-      if (backdrop) backdrop.hidden = false;
     } else {
       closeAll();
     }
+  });
+
+  // Outside-press close. (This replaced a full-screen click-away backdrop, which stacked ABOVE the
+  // top bar and swallowed every rail tap — and blocked map drags while the menu was open.) A press
+  // outside the menu/rail/popovers closes them WITHOUT consuming the press, so the same touch that
+  // dismisses the menu can start a map drag.
+  document.addEventListener("pointerdown", (e) => {
+    if (rail.hidden && pops.every(([, p]) => !p || p.hidden)) return;
+    const inside = [menuBtn, rail, layersPop, legendPop]
+      .some((el) => el && el.contains(e.target));
+    if (!inside) closeAll();
   });
 
   // A rail icon's popover opens to the LEFT; one at a time; the rail stays open so you can switch.
@@ -58,7 +65,10 @@ export function initChrome() {
   // "About" re-opens the welcome card (forced past the shown-once flag); close the menu behind it.
   if (infoBtn) infoBtn.addEventListener("click", () => { closeAll(); maybeShowWelcomeHero(true); });
 
-  if (backdrop) backdrop.addEventListener("click", closeAll);
+  // The brand logo is an about button too — tapping it re-opens the welcome card.
+  const brand = document.querySelector(".brand");
+  if (brand) brand.addEventListener("click", () => { closeAll(); maybeShowWelcomeHero(true); });
+
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll(); });
 
   // Layers popover rows, from map.js's basemap registry.

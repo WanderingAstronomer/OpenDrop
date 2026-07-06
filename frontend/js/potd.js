@@ -3,8 +3,9 @@
 //   (a) the placeholder in a place's photo section when it has zero community photos, and
 //   (b) a closable first-visit welcome hero on the map.
 // The backend (/api/potd) is the single fetch and does all the graceful-degrade work; this module
-// memoizes that one call and renders attribution-complete DOM. If POTD is unavailable, everything
-// here renders nothing — the feature is purely additive.
+// memoizes that one call and renders attribution-complete DOM. If POTD is unavailable, the
+// placeholder and the first-visit auto-show render nothing (purely additive) — only an explicit
+// About/logo click still gets the welcome card, text-only.
 
 import { API } from "./config.js";
 
@@ -113,12 +114,15 @@ export async function maybeShowWelcomeHero(force) {
   }
   if (document.querySelector(".welcome-overlay")) return;  // already open (e.g. re-tapped "about")
   const potd = await getPotd();
-  if (!potd) return;
+  // Unforced (first-visit auto-show): stay purely additive — no picture, no hero. Forced (the
+  // logo / About button): the card is the point, so render it text-only rather than dead-click.
+  if (!potd && !force) return;
 
   const opener = document.activeElement;  // hand focus back here on close
 
-  // A centered greeting on a light scrim — dismissible every way (✕ / Got it / Escape / scrim click),
-  // shown exactly once. Still not a hard modal: closing it leaves the live map behind.
+  // A centered greeting on a light scrim — dismissible via "Got it", Escape, or a scrim click
+  // (no ✕: it sat on top of the artwork), shown exactly once. Still not a hard modal: closing it
+  // leaves the live map behind.
   const overlay = document.createElement("div");
   overlay.className = "welcome-overlay";
 
@@ -128,15 +132,7 @@ export async function maybeShowWelcomeHero(force) {
   card.setAttribute("aria-modal", "false");
   card.setAttribute("aria-label", "Welcome to OpenDrop");
 
-  // Close button (also the initial focus target).
-  const close = document.createElement("button");
-  close.type = "button";
-  close.className = "welcome-x";
-  close.setAttribute("aria-label", "Close welcome");
-  close.textContent = "✕";  // ✕
-  card.appendChild(close);
-
-  const img = potd.image_url || potd.thumb_url;  // full-res for the full-aspect display
+  const img = potd && (potd.image_url || potd.thumb_url);  // full-res for the full-aspect display
   if (img) {
     const media = document.createElement("a");
     media.href = potd.source_url || img;
@@ -164,7 +160,7 @@ export async function maybeShowWelcomeHero(force) {
     + "open-data project.";
   body.appendChild(h);
   body.appendChild(blurb);
-  body.appendChild(buildCredit(potd));
+  if (potd) body.appendChild(buildCredit(potd));
 
   // Maker byline.
   const author = document.createElement("p");
@@ -193,7 +189,6 @@ export async function maybeShowWelcomeHero(force) {
     overlay.remove();
     try { if (opener && opener.focus) opener.focus({ preventScroll: true }); } catch (e) { /* gone */ }
   };
-  close.onclick = dismiss;
   gotit.onclick = dismiss;
   overlay.addEventListener("click", (e) => { if (e.target === overlay) dismiss(); });  // scrim click
 
@@ -212,6 +207,11 @@ export async function maybeShowWelcomeHero(force) {
   };
   document.addEventListener("keydown", onKey);
 
+  // Re-check after the await: a second trigger (e.g. double-tapping the logo) during the in-flight
+  // POTD fetch passes the top guard twice — don't stack a second overlay.
+  if (document.querySelector(".welcome-overlay")) { document.removeEventListener("keydown", onKey); return; }
   document.body.appendChild(overlay);
-  try { close.focus({ preventScroll: true }); } catch (e) { /* not focusable yet */ }
+  // No preventScroll: on short viewports the card overflows and "Got it" sits below its internal
+  // fold — the focus call must scroll it into view or keyboard focus lands somewhere invisible.
+  try { gotit.focus(); } catch (e) { /* not focusable yet */ }
 }

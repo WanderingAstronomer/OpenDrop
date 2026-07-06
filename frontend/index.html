@@ -34,19 +34,20 @@
   <div id="map" role="application" aria-label="Map of clothing donation locations"></div>
 
   <!-- Top bar (z30): the redesign's chrome bar — brand | flex search | action cluster. On desktop
-       (>=1024px) it is a full-width 64px surface the side rails tuck under; on mobile it floats on
-       a gradient scrim with safe-area padding. The bar itself is click-transparent (pointer-events
-       none) so any empty band never steals map interaction; children re-enable pointer events. -->
+       (>=1024px) it is a full-width 64px surface the side rails tuck under; on mobile it floats
+       transparent with safe-area padding (each child carries its own surface). The bar itself is
+       click-transparent (pointer-events none) so any empty band never steals map interaction;
+       children re-enable pointer events. -->
   <div class="topbar">
-    <!-- Brand mark. Mobile shows the dedicated square ICON; desktop shows the full wordmark lockup —
-         no more cropping the wordmark into a makeshift icon. -->
-    <div class="brand">
-      <img class="brand-icon" src="opendrop-icon.png" alt="OpenDrop" width="128" height="128" />
+    <!-- Brand mark — also a BUTTON: tapping the logo re-opens the welcome/about card (js/chrome.js).
+         Mobile shows the dedicated square ICON; desktop shows the full wordmark lockup. -->
+    <button class="brand" type="button" aria-label="About OpenDrop" title="About OpenDrop">
+      <img class="brand-icon" src="opendrop-icon.png" alt="" width="128" height="128" />
       <picture class="brand-wordmark">
         <source srcset="opendrop-logo.webp" type="image/webp" />
-        <img class="brand-logo" src="opendrop-logo.png" alt="OpenDrop" width="865" height="240" />
+        <img class="brand-logo" src="opendrop-logo.png" alt="" width="865" height="240" />
       </picture>
-    </div>
+    </button>
 
     <div id="search" class="search">
       <div class="search-field">
@@ -87,10 +88,9 @@
 
   <div id="map-status" class="map-status" role="status" aria-live="polite" hidden></div>
 
-  <!-- Popovers (z40) + shared click-away backdrop (z39). The legend card that used to live
-       permanently bottom-left is now the "i" popover; layers-pop rows are built by js/chrome.js
-       from the basemap registry. -->
-  <div id="pop-backdrop" class="pop-backdrop" hidden></div>
+  <!-- Popovers (z40). The legend card that used to live permanently bottom-left is now the "i"
+       popover; layers-pop rows are built by js/chrome.js from the basemap registry. Closing on an
+       outside press is wired in js/chrome.js (no blocking backdrop layer). -->
   <div id="layers-pop" class="map-pop" role="menu" aria-label="Map layers" hidden></div>
   <div id="legend-pop" class="map-pop" role="dialog" aria-label="Location confidence legend" hidden>
     <div id="legend" class="legend">
