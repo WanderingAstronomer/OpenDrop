@@ -56,3 +56,6 @@ backups/
 # local working docs
 /TRIAGE.md
 /PERF.md
+
+# marketing / press materials — kept local, not tracked in the app repo
+/press/
