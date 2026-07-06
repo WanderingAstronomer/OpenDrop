@@ -123,7 +123,7 @@ function makePointMarker(f) {
 
 // --- server cluster bubbles (DOM divIcons) -----------------------------------------------------
 // Build (but do NOT add) a bubble marker. Diameter scales with the log of the count (bubbleSize,
-// capped below the server cell so grid bubbles never touch); the label is pre-formatted. The caller
+// capped below BIN_PX so pixel-merged neighbours never touch); the label is pre-formatted. The caller
 // batches the returned markers into serverLayer in one pass.
 function makeBubble(lat, lon, count, label, onClick, extraClass = "") {
   const size = bubbleSize(count);
@@ -187,16 +187,16 @@ export function render(data, bbox) {
         }, "odc-region"));
       });
     } else {
-      // Below national, the server (B8) hands back one of two de-overlapped tiers:
+      // Below national, the server (B8) hands back one of two tiers, both CENTROID-positioned:
       //  - "state": one bubble per state at its centroid — render AS-IS. Pixel-binning here would
-      //    merge nearby states (New England) into one bubble, and which ones merge would depend on
-      //    the pan (container-pixel grid), so bubbles would flicker/jump as you drag.
-      //  - "grid" (or a legacy z-less response): cells sit on world-grid vertices already spaced by
-      //    the zoom-aware cell, so binPoints is a safeguard that no-ops when the cell >= BIN_PX.
+      //    merge nearby states (New England) into one bubble, which the owner asked to keep distinct.
+      //  - "grid" (or a legacy z-less response): one centroid per zoom-sized cell. binPoints then
+      //    caps on-screen density and de-overlaps any two centroids closer than BIN_PX — binned in
+      //    ABSOLUTE world pixels (map.project), so the grid is pan-invariant and bubbles don't jump.
       const outCells = data.tier === "state"
         ? cells
         : binPoints(cells.map((c) => {
-          const p = map.latLngToContainerPoint([c.lat, c.lon]);
+          const p = map.project([c.lat, c.lon], z);
           return { x: p.x, y: p.y, lat: c.lat, lon: c.lon, count: c.count };
         }), BIN_PX);
       outCells.forEach((c) => {

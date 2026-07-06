@@ -102,8 +102,10 @@ async def list_locations(bbox: str, types: str | None = None,
         #  - z <= STATE_BAND_MAX_Z (wide, several states): ONE BUBBLE PER STATE at the state's data
         #    centroid; the ~0.4% of rows with no state fall back to a coarse grid cell so they stay
         #    visible and don't pile onto one phantom centroid.
-        #  - otherwise: a ZOOM-AWARE grid — cell = f(z), snapped to grid VERTICES (evenly spaced by
-        #    the cell, so bubbles are de-overlapped when the frontend caps their diameter < cell).
+        #  - otherwise: a ZOOM-AWARE grid — cell = f(z) so on-screen bubble density stays constant,
+        #    but each bubble sits at the data CENTROID of its cell (not the grid vertex), so a zoom-in
+        #    reads as organic clusters where the pins are, not graph paper. The frontend pixel-merges
+        #    the cells and caps bubble diameter so neighbouring centroids never touch.
         if z is None:
             tier = "grid"
             cell = max(max(east - west, north - south) / 32.0, 0.005)
@@ -130,12 +132,15 @@ async def list_locations(bbox: str, types: str | None = None,
         else:
             tier = "grid"
             cell = cluster_cell_deg(z)
+            # Bin by the zoom-sized cell (constant on-screen density) but place each bubble at the
+            # CENTROID of the pins in that cell (avg), not the grid vertex — organic clusters, not a
+            # lattice. ORDER BY count DESC so if a view exceeds cluster_cap the densest cells survive.
             cur = await conn.execute(
-                f"""SELECT ST_X(g) AS lon, ST_Y(g) AS lat, count(*) AS cnt, avg(confidence) AS ac
-                    FROM (SELECT ST_SnapToGrid(geom, %s, %s) AS g, confidence
-                          FROM locations WHERE {where}) t
-                    GROUP BY g ORDER BY count(*) DESC LIMIT %s""",
-                [cell, cell] + params + [settings.cluster_cap],
+                f"""SELECT avg(ST_X(geom)) AS lon, avg(ST_Y(geom)) AS lat,
+                           count(*) AS cnt, avg(confidence) AS ac
+                    FROM locations WHERE {where}
+                    GROUP BY ST_SnapToGrid(geom, %s, %s) ORDER BY count(*) DESC LIMIT %s""",
+                params + [cell, cell, settings.cluster_cap],
             )
         clusters = [{"lon": float(r["lon"]), "lat": float(r["lat"]),
                      "count": r["cnt"], "avg_confidence": round(float(r["ac"]), 1)}

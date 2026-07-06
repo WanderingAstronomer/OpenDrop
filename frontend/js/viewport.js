@@ -191,10 +191,9 @@ export function binPoints(points, cellPx) {
   }));
 }
 
-// Cluster-bubble diameter (px) from its count. Grows with log(count) and is CAPPED below the
-// server's on-screen cell edge (backend CLUSTER_TARGET_PX ≈ 82px), so grid-tier bubbles — which sit
-// on grid vertices one cell apart — can never touch. Trimmed ~12% from the earlier 34 + log2·4 /
-// cap-64 (which hit the full 64px bin width and collided with its neighbours) per the density pass.
+// Cluster-bubble diameter (px) from its count. Grows with log(count) and is CAPPED below BIN_PX (the
+// 64px screen grid the frontend merges centroids onto), so two pixel-merged neighbours — at least one
+// bin apart — can never touch. Trimmed ~12% from the earlier cap-64 that hit the full bin width.
 export const BUBBLE_MAX_PX = 56;
 export function bubbleSize(count) {
   return Math.round(Math.min(BUBBLE_MAX_PX, 30 + Math.log2((count || 0) + 1) * 3.6));

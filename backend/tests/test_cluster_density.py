@@ -80,7 +80,7 @@ def test_state_band_places_bubble_at_state_centroid(client, conn):
     assert abs(aa["lat"] - 45.0) < 1e-6 and abs(aa["lon"] - (-100.0)) < 1e-6
 
 
-# ---- zoom-aware grid: de-overlapped vertices, state-agnostic ----------------------------------
+# ---- zoom-aware grid: centroid-positioned, state-agnostic -------------------------------------
 
 @requires_db
 def test_grid_tier_above_state_band(client, conn):
@@ -93,16 +93,18 @@ def test_grid_tier_above_state_band(client, conn):
 
 
 @requires_db
-def test_grid_snaps_bubbles_to_grid_vertices(client, conn):
-    """Grid bubbles sit on grid vertices (multiples of the cell), NOT the data centroid — that even
-    spacing is what keeps them from overlapping once the frontend caps diameter below the cell."""
+def test_grid_places_bubbles_at_data_centroid(client, conn):
+    """Grid bubbles sit at the CENTROID of the pins in their cell, NOT the grid vertex — so a zoom-in
+    reads as organic clusters where the data is, not a lattice. The frontend pixel-merges the cells
+    and caps bubble diameter to keep neighbouring centroids from touching."""
     _seed(conn)
-    cell = cluster_cell_deg(9)
     body = client.get("/api/locations", params={"bbox": _BBOX, "cluster": "on", "z": 9}).json()
-    for c in body["clusters"]:
-        # every returned point is an exact multiple of the cell in both axes
-        assert abs(c["lon"] / cell - round(c["lon"] / cell)) < 1e-6
-        assert abs(c["lat"] / cell - round(c["lat"] / cell)) < 1e-6
+    by_count = {c["count"]: c for c in body["clusters"]}
+    # each seed group sits alone in its (fine, z=9) cell, so the cell centroid == the pins' point,
+    # never snapped to a grid multiple: AA's 3 coincident pins -> exactly (45.0, -100.0), etc.
+    assert abs(by_count[3]["lat"] - 45.0) < 1e-6 and abs(by_count[3]["lon"] - (-100.0)) < 1e-6
+    assert abs(by_count[2]["lat"] - 46.0) < 1e-6 and abs(by_count[2]["lon"] - (-101.0)) < 1e-6
+    assert abs(by_count[1]["lat"] - 45.5) < 1e-6 and abs(by_count[1]["lon"] - (-100.5)) < 1e-6
 
 
 @requires_db

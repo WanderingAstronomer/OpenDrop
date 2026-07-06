@@ -204,8 +204,8 @@ test("binPoints leaves already-sparse cells untouched", () => {
 // --- cluster bubble sizing (de-overlap invariant) -----------------------------------------------
 
 test("bubbleSize grows with count but never exceeds the de-overlap cap", () => {
-  // The whole point: a grid bubble must stay smaller than the server's on-screen cell (~82px) so
-  // vertex-spaced neighbours can't touch. The cap is the load-bearing guarantee.
+  // The cap is the load-bearing de-overlap guarantee: a bubble stays smaller than the 64px screen
+  // grid the frontend merges centroids onto, so two merged neighbours (>=1 bin apart) can't touch.
   for (const n of [0, 1, 5, 50, 500, 5000, 500000]) {
     const s = bubbleSize(n);
     assert.ok(s <= BUBBLE_MAX_PX, `size ${s} for count ${n} exceeds the cap`);
