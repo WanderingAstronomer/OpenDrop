@@ -322,13 +322,13 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-ctl); box-shadow: var(--shadow); padding: 7px 12px;
 }
-.brand-logo { display: block; height: 84px; width: auto; }
+.brand-logo { display: block; height: 71px; width: auto; }
 /* Below 1024px the full wordmark lockup would crowd the search — crop the card to show only the
    icon third of the logo (the wordmark art is the right two-thirds of a 2:1 image). The corner is
    never empty, and the search gains the reclaimed width. */
 @media (max-width: 1023px) {
-  .brand { overflow: hidden; width: 46px; padding: 7px; }
-  .brand-logo { height: 60px; }
+  .brand { overflow: hidden; width: 40px; padding: 7px; }
+  .brand-logo { height: 51px; }
 }
 /* On phones the collapsed layers card shrinks to a ~44px icon, so the bar needs far less right
    reservation; and the search un-zooms to near-full width (see .search below). */
@@ -895,10 +895,25 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
 }
 /* Shared credit line (also used inside the welcome hero). Small + muted, license/source linked. */
 .potd-credit {
-  margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3);
+  margin: 6px 0 0; font-size: 11px; line-height: 1.45; color: var(--ink-3);
+  text-align: center; text-wrap: pretty; /* center + avoid an orphaned "Wikimedia Commons" line */
 }
 .potd-credit a { color: var(--ink-2); text-decoration: none; }
 .potd-credit a:hover { color: var(--accent); text-decoration: underline; }
+
+/* Collapsible map attribution: the required ODbL + source credits collapse to ONE compact line so
+   they don't eat a strip of the map (worst on mobile, where they wrapped to ~5 lines); tapping the
+   strip (not a credit link) toggles the full text. ODbL only requires attribution be visible/
+   accessible — this keeps it so, just out of the way. */
+.leaflet-control-attribution.attr-collapsible {
+  max-width: 52vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+}
+.leaflet-control-attribution.attr-collapsible.attr-open {
+  max-width: min(94vw, 680px); white-space: normal; cursor: default;
+}
+@media (max-width: 767px) {
+  .leaflet-control-attribution.attr-collapsible { max-width: 62vw; font-size: 10px; }
+}
 
 /* ============================ WELCOME HERO ============================= */
 /* First-visit intro card. Bounded + non-modal (the map stays live behind it); anchored bottom-left

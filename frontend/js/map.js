@@ -108,6 +108,17 @@ export function initMap() {
   // un-zoomed px (getBoundingClientRect would be zoom-scaled and double-count). rAF-wrap the write
   // to avoid the "ResizeObserver loop" warning. Guarded for when the control/observer is absent.
   const attrEl = map.attributionControl && map.attributionControl.getContainer();
+  // Collapsible attribution: the required ODbL + source credits were eating a strip of the map (on
+  // mobile they wrapped to ~5 lines), so collapse them to one compact line by default; tapping the
+  // strip (not a credit link) toggles the full text. Present + accessible, just out of the way.
+  if (attrEl) {
+    attrEl.classList.add("attr-collapsible");
+    attrEl.title = "Map data & attribution — tap to expand";
+    attrEl.addEventListener("click", (e) => {
+      if (e.target.closest && e.target.closest("a")) return;  // let credit links through
+      attrEl.classList.toggle("attr-open");
+    });
+  }
   if (attrEl && typeof ResizeObserver !== "undefined") {
     // The control stacks (.map-ctl-bl/.map-ctl-br) are siblings of #map under <body>, not children
     // of the map container, so the var must live on a shared ancestor to inherit into them — set it
@@ -131,7 +142,12 @@ export function initMap() {
 
 export function applyAttribution(map, sources) {
   (sources || []).forEach((s) => {
-    if (s.attribution) map.attributionControl.addAttribution(s.attribution);
+    if (!s.attribution) return;
+    // The basemap tiles already credit "© OpenStreetMap contributors"; skip a data-source credit
+    // that just repeats OpenStreetMap so it isn't shown twice (the OSM data is ODbL — recorded on
+    // the Source page + in the /api/export payload). Every other source still gets its own credit.
+    if (/openstreetmap/i.test(s.attribution)) return;
+    map.attributionControl.addAttribution(s.attribution);
   });
 }
 
