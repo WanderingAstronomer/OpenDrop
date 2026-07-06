@@ -3,7 +3,7 @@ import { initChrome } from "./chrome.js";
 import { loadMeta } from "./config.js";
 import { getTypes, initList, updateList } from "./list.js";
 import { initLocateButton } from "./locate.js";
-import { applyAttribution, fitToCoverage, initMap } from "./map.js";
+import { applyAttribution, fitToCoverage, initMap, initMapInsets } from "./map.js";
 import { initMarkers, render } from "./markers.js";
 import { initPlacePanel, openPlacePanel } from "./panel.js";
 import { maybeShowWelcomeHero } from "./potd.js";
@@ -12,7 +12,8 @@ import { app } from "./state.js";
 import { initSubmitPanel } from "./submit.js";
 import { initTheme } from "./theme.js";
 import {
-  US_DATA_ENVELOPE, cacheHit, expandBbox, filterFeaturesToBbox, isNationalView, sanitizeBbox,
+  US_DATA_ENVELOPE, cacheHit, expandBbox, filterFeaturesToBbox, inUSCoverage,
+  isNationalView, sanitizeBbox,
 } from "./viewport.js";
 
 let map = null;
@@ -66,17 +67,51 @@ function present(data, bbox) {
   }
 }
 
+const COVERAGE_COPY = "OpenDrop covers the United States — head back west, or search a US city.";
+// ONE shared instance, not a factory: render() is idempotent by data identity (A1), so repeated
+// overseas pans present the same object and skip the rebuild instead of re-clearing every time.
+const EMPTY_FC = { mode: "points", type: "FeatureCollection", features: [], outOfCoverage: true };
+
 async function refresh() {
   const bbox = viewportBbox();
   if (!bbox) {
-    // Container not laid out yet (zero-area bounds) — never a server problem. The resize hooks
-    // below re-trigger once the map has real dimensions.
     firstLoad = false;
+    // Two very different null-bbox cases: an UNSIZED container (boot race — stay silent, the
+    // resize hooks re-trigger) vs a SIZED view lying entirely in the noWrap void past ±180
+    // (a hard westward fling near the Aleutians) — that one must present the honest empty state,
+    // not leave stale rows and a cleared banner over grey void.
+    const c = map.getContainer();
+    if (c.offsetWidth > 0 && c.offsetHeight > 0) {
+      reqSeq++;
+      present(EMPTY_FC, [0, 0, 0, 0]);
+      setStatus(COVERAGE_COPY);
+    }
     return;
   }
   const zoom = map.getZoom();
   const types = getTypes();
-  const national = isNationalView(bbox);
+  // The world is freely pannable (B5), so "national-width" says nothing about WHERE the view is:
+  // a min-zoom view over Europe is 65°+ wide with every region-bubble anchor off-screen. Only
+  // collapse to the envelope fetch when US data territory is actually on screen (the real data
+  // boxes, not the envelope's empty ocean padding); otherwise say so honestly.
+  const inCoverage = inUSCoverage(bbox);
+  const national = isNationalView(bbox) && inCoverage;
+  const emptyCopy = inCoverage
+    ? "No donation locations in this area — try zooming out, or add one."
+    : COVERAGE_COPY;
+
+  // No US data territory on screen: the result is knowably empty without a round-trip. Present
+  // the empty state honestly and skip the fetch — counting a fetch's over-reach margin here
+  // would clear the banner over a blank ocean (the 1.5x expansion of a min-zoom Paris view
+  // reaches all the way back into US data). The seq bump invalidates any in-flight US response
+  // so it can't land on top of the overseas view.
+  if (!inCoverage) {
+    reqSeq++;
+    present(EMPTY_FC, bbox);
+    setStatus(emptyCopy);
+    firstLoad = false;
+    return;
+  }
 
   // A national render totals region bubbles from the WHOLE data envelope; a regional cache only
   // covers its expanded viewport. They must never serve each other — a regional cache whose box
@@ -92,9 +127,7 @@ async function refresh() {
     const inView = cache.data && cache.data.mode !== "clusters"
       ? filterFeaturesToBbox(cache.data.features, bbox).length
       : countFeatures(cache.data);
-    setStatus(inView > 0
-      ? null
-      : "No donation locations in this area — try zooming out, or add one.");
+    setStatus(inView > 0 ? null : emptyCopy);
     return;
   }
 
@@ -113,7 +146,7 @@ async function refresh() {
       hasData = true;
       setStatus(null);
     } else {
-      setStatus("No donation locations in this area — try zooming out, or add one.");
+      setStatus(emptyCopy);
     }
   } catch (e) {
     if (seq !== reqSeq) return; // stale failure — a newer request owns the UI now
@@ -152,7 +185,6 @@ async function boot() {
   initTheme();
   const meta = await loadMeta();
   map = initMap();
-  fitToCoverage(map, meta.coverage);
   app.map = map;
   app.refresh = forceRefresh;
   applyAttribution(map, meta.sources);
@@ -165,22 +197,37 @@ async function boot() {
   map.on("moveend", debouncedRefresh);
   map.on("resize", debouncedRefresh);
 
-  // If the container had no size at init (hidden tab, iframe race), Leaflet computes a zero-area
-  // view and every bounds is degenerate. Watch for the first real layout, then re-measure once.
+  // The container's box changes with LAYOUT, not just window resizes: the zero-size boot race
+  // (hidden tab, iframe) AND the desktop rail insets (B6 — the css :has rules shift #map's
+  // left/right edges when a rail opens, so the visible map IS the map). Watch it permanently,
+  // debounced past the .2s inset transition's per-frame fires; invalidateSize emits Leaflet's
+  // "resize", which re-derives the min zoom (map.js) and refetches via the hook above — bounds,
+  // fetches, and "N in view" all track what the eye actually sees. pan:false keeps the top-left
+  // anchor still, so opening a rail trims the covered side instead of re-centering everything.
   const container = map.getContainer();
   if (typeof ResizeObserver !== "undefined") {
+    let sizeSettle = null;
     const ro = new ResizeObserver(() => {
-      if (container.offsetWidth > 0 && container.offsetHeight > 0) {
-        map.invalidateSize();
-        ro.disconnect();
-        debouncedRefresh();
-      }
+      clearTimeout(sizeSettle);
+      sizeSettle = setTimeout(() => {
+        if (container.offsetWidth > 0 && container.offsetHeight > 0) {
+          map.invalidateSize({ pan: false });
+        }
+      }, 80);
     });
     ro.observe(container);
   }
 
   window.opendrop = app; // debug handle (also used by preview-based UI verification)
   initPlacePanel(map);
+
+  // B6 insets, then the opening frame — IN THAT ORDER. initList already opened the desktop rail
+  // above; syncInsets() settles the container box SYNCHRONOUSLY (the MutationObserver variant is
+  // a microtask and hasn't run yet inside this task), so fitToCoverage frames the US in the box
+  // the user will actually see, not the full width the rail is about to cover.
+  const syncInsets = initMapInsets(map);
+  syncInsets();
+  fitToCoverage(map, meta.coverage);
   await refresh();
 
   // First-visit welcome hero (POTD-backed, closable, shown once). Fire-and-forget: it self-fetches

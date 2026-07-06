@@ -136,6 +136,15 @@ body { position: relative; }
    Mobile-only concept; desktop keeps the corner pill. */
 @media (max-width: 1023px) { :root { --bar-h: 64px; --attr-h: 24px; } }
 #map { position: fixed; inset: 0; width: 100dvw; height: 100dvh; z-index: 0; background: var(--map-base); }
+/* B6 (desktop only): open rails INSET the map instead of overlaying it — the visible map IS the
+   map, so bounds, fetches, "N in view", and pin visibility are all honest. The inset itself is
+   JS-DRIVEN (js/map.js initMapInsets sets inline left/right and counter-pans the origin shift in
+   one pre-paint step — a CSS :has + transition here would slide the whole world sideways and give
+   camera math a 200ms moving box). CSS only flips width/height to auto so the inline edges govern
+   the box; mobile keeps 100dvw/100dvh (sheets overlay by design). */
+@media (min-width: 1024px) {
+  #map { width: auto; height: auto; }
+}
 
 /* Screen-reader-only text (page h1, search live region). Both class names resolve to one rule so
    markup can use either; new markup standardizes on .sr-only. */
@@ -889,14 +898,13 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
 .pp-chev { display: inline-block; transition: transform .2s ease; }
 .pp-tab.is-collapsed .pp-chev { transform: rotate(180deg); }
 
-/* Desktop chrome yields to the rails: the bottom-right stack shifts left of the open detail rail,
-   and the attribution pill shifts right of the open list rail. The top bar spans full width ABOVE
-   both rails (they start at top:var(--bar-h)), so it never needs to reserve anything. */
+/* Desktop chrome yields to the rails: the bottom-right stack (BODY-level, viewport-fixed) still
+   shifts left of the open detail rail. The attribution needs no shift anymore — it lives INSIDE
+   #map, and B6 insets the map itself past the list rail (a +340px rule here would double-shift).
+   The top bar spans full width ABOVE both rails, so it never needs to reserve anything. */
 @media (min-width: 1024px) {
   .map-ctl-br { transition: right .2s ease; }
   body:has(.place-panel.open:not(.collapsed)) .map-ctl-br { right: calc(min(400px, 40vw) + 16px); }
-  .leaflet-bottom.leaflet-left { transition: left .2s ease; }
-  body:has(.list-panel.open:not(.collapsed)) .leaflet-bottom.leaflet-left { left: 340px; }
 }
 
 /* ============================ LIST PANEL ================================ */

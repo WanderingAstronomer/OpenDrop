@@ -7,23 +7,28 @@
 // otherwise — which the UI used to misreport as "couldn't reach the server". Every request path
 // therefore sanitizes through here first.
 
-// The API stores US data only (the pipeline's ingest gate caps longitude at [-180, -64] — even
-// Alaska's antimeridian-crossing Aleutian islands are rejected at ingest), so the positive-lon
-// side of an antimeridian-crossing view can never contain data and is safe to drop.
+// The tile layers run noWrap, so the world renders exactly ONCE: longitudes past ±180 are grey
+// void on screen, never a wrapped copy. Out-of-range bounds are therefore CLAMPED (the void side
+// dropped) — the old wrap-around normalization fetched real data for territory that wasn't
+// visible (e.g. an east pan past +180 "wrapping" into Alaska).
 const WORLD = [-180, -90, 180, 90];
 
-// Everywhere US data can live (CONUS + AK + HI + PR, padded) — also the map's pan limit rect.
+// Everywhere US data can live (CONUS + AK + HI + PR, padded).
 export const US_DATA_ENVELOPE = [-180, 14, -60, 72];
 // The contiguous-US core: a view that contains this rect is genuinely "the whole US on screen".
 export const CONUS_CORE = [-125, 24, -66, 50];
-
-function wrapLon(x) {
-  // Normalize any longitude into [-180, 180). 180 maps to -180; callers preserve east=180 manually.
-  return ((((x + 180) % 360) + 360) % 360) - 180;
-}
+// Where data ACTUALLY lives, tighter than the padded envelope (whose ~6° of empty Atlantic east
+// of -66 would otherwise count as "coverage" and suppress the guidance banner over blank ocean).
+export const US_DATA_BOXES = [
+  CONUS_CORE,                 // contiguous US
+  [-180, 50, -125, 72],       // Alaska (incl. the Aleutians to -180)
+  [-165, 15, -150, 25],       // Hawaii
+  [-68, 17, -64, 19.5],       // Puerto Rico / USVI
+];
 
 // Raw Leaflet bounds -> a valid [west, south, east, north] bbox for the API, or null when the
-// viewport is degenerate (container not sized yet) and the fetch should be silently skipped.
+// viewport is degenerate (container not sized yet) OR lies entirely in the noWrap void past ±180
+// — either way the fetch should be silently skipped.
 export function sanitizeBbox({ west, south, east, north }) {
   if (![west, south, east, north].every((v) => typeof v === "number" && isFinite(v))) return null;
 
@@ -32,23 +37,23 @@ export function sanitizeBbox({ west, south, east, north }) {
   if (!(s < n)) return null; // degenerate or inverted latitudes
 
   if (west === east) return null; // point bbox from an unsized container
-  let w, e;
-  if (east - west >= 360) {
-    [w, e] = [-180, 180]; // whole world (or more) in view
-  } else {
-    w = wrapLon(west);
-    e = east === 180 ? 180 : wrapLon(east);
-    if (!(w < e)) {
-      // The view straddles ±180 (e.g. the default zoom-4 view on a wide monitor: west=-188 wraps
-      // to +172). The visible longitudes are [w,180] ∪ [-180,e]; only [-180,-64] can hold data.
-      // Keep [-180,e], and when the [w,180] side ALSO dips into data territory (wrapped west
-      // below -64, i.e. a >300° view wrapping past +180), extend e so that side's data survives.
-      if (w < -64) e = Math.max(e, -64);
-      if (!(e > -180)) return null;
-      w = -180;
-    }
-  }
+  if (east - west >= 360) return [-180, s, 180, n]; // a full wrap or more: the whole world is on screen
+
+  const w = Math.max(west, -180);
+  const e = Math.min(east, 180);
+  if (!(w < e)) return null; // the view sits entirely in the void beyond ±180
   return [w, s, e, n];
+}
+
+// True when two [w,s,e,n] boxes overlap at all (strict — edge-touching does not count).
+export function bboxIntersects(a, b) {
+  return a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+}
+
+// The "is any US data territory on screen?" gate now that the world is freely pannable — checked
+// against the real data boxes, not the padded envelope, so empty ocean padding never counts.
+export function inUSCoverage(bbox) {
+  return !!bbox && US_DATA_BOXES.some((b) => bboxIntersects(bbox, b));
 }
 
 // Grow a bbox around its center by `factor` (e.g. 1.4 over-fetches ~40% margin so small pans stay
@@ -140,10 +145,10 @@ export const REGIONS = {
 // dragging one corner (e.g. Maine) off-screen flipped the whole map between 3 region bubbles and
 // hundreds of raw cells — the jarring toggle the owner reported. The bubbles sit at fixed anchors
 // and pan smoothly with the map, so a view panned toward Alaska just shows the AK bubble on-screen
-// and the CONUS bubble drifting toward the edge. (At these widths the map's maxBounds keep the view
-// inside [-180,-60], so no antimeridian clamping shrinks the span — width tracks zoom exactly. The
-// one accepted edge: panning so far into the Pacific that an anchor leaves the screen briefly shows
-// no bubble for that region; maxBounds makes this rare.)
+// and the CONUS bubble drifting toward the edge. NOTE: with the world freely pannable, width alone
+// says nothing about WHERE the view is — a min-zoom view over Europe is "national"-wide with every
+// anchor off-screen. main.js therefore pairs this with bboxIntersects(bbox, US_DATA_ENVELOPE) and
+// falls back to an honest empty state when no US territory is on screen at all.
 export const REGION_COLLAPSE_SPAN_DEG = 65;
 
 export function isNationalView(bbox) {

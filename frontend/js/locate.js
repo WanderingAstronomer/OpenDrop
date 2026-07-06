@@ -45,12 +45,9 @@ export function initLocateButton(map) {
 
   map.on("locationfound", (e) => {
     setBusy(false);
-    // The map is clamped to the US envelope (maxBounds); centering on an overseas position would
-    // just slam the camera into the bounds edge with the marker unreachable. Say so instead.
-    if (!inUS(e.latlng)) {
-      toast(OUTSIDE_COPY, "error");
-      return;
-    }
+    // The world map is fully pannable now (no maxBounds), so an overseas position gets centered
+    // like any other — just say the data won't be there. Informational, not an error.
+    if (!inUS(e.latlng)) toast(OUTSIDE_COPY, "info");
     if (youAreHere) map.removeLayer(youAreHere);
     // The classic blue you-are-here dot: white ring + soft pulsing halo (styled in style.css;
     // pulse respects prefers-reduced-motion there). A divIcon, NOT a circleMarker — data pins are
@@ -98,8 +95,8 @@ export function initLocateButton(map) {
       setBusy(false);
       toast(FAILED_COPY, "error");
     }, WATCHDOG_MS);
-    // setView:false — the locationfound handler owns the camera so it can refuse to chase an
-    // out-of-coverage position into the maxBounds wall.
+    // setView:false — the locationfound handler owns the camera (marker, zoom floor, and the
+    // out-of-coverage notice live together there).
     map.locate({ setView: false, enableHighAccuracy: true, timeout: 10000 });
   });
 }

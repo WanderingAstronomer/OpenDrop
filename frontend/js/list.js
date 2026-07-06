@@ -193,6 +193,12 @@ export function updateList(data) {
   }
   count.textContent = `${feats.length} in view`;
   if (!feats.length) {
+    // Out of US coverage entirely (main.js skipped the fetch): recruiting a submission here would
+    // walk the user into out-of-coverage coordinates — just point home instead.
+    if (data.outOfCoverage) {
+      ul.innerHTML = `<li class="list-empty">Nothing here — OpenDrop lists US locations.</li>`;
+      return;
+    }
     // The empty state recruits: hand the user the Add flow instead of a dead end.
     ul.innerHTML = `<li class="list-empty">No locations in this area yet.<br>
       <button class="btn quiet list-add" type="button">Add one you know about</button></li>`;

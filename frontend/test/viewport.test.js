@@ -5,9 +5,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  sanitizeBbox, expandBbox, bboxContains, filterFeaturesToBbox, isNationalView,
-  partitionRegions, regionOf, binPoints, formatCount, REGIONS, prefersReducedMotion,
-  cacheHit, computeDiff,
+  sanitizeBbox, expandBbox, bboxContains, bboxIntersects, filterFeaturesToBbox, inUSCoverage,
+  isNationalView, partitionRegions, regionOf, binPoints, formatCount, REGIONS, US_DATA_ENVELOPE,
+  prefersReducedMotion, cacheHit, computeDiff,
 } from "../js/viewport.js";
 
 // --- sanitizeBbox ---------------------------------------------------------------------------
@@ -31,11 +31,21 @@ test("sanitizeBbox returns the full world when the view spans >= 360 degrees", (
     [-180, -60, 180, 75]);
 });
 
-test("sanitizeBbox keeps the western side of an antimeridian-crossing view (Hawaii reachable)", () => {
-  // Panning west past the antimeridian toward Hawaii: east=210 wraps to -150; the data-bearing
-  // side [-180, -150] survives (Hawaii at -157 stays fetchable), the no-data positive side drops.
-  assert.deepEqual(sanitizeBbox({ west: 150, south: 20, east: 210, north: 60 }),
+test("sanitizeBbox keeps Hawaii fetchable on the real westward route (west < -180 clamps)", () => {
+  // Panning west toward Hawaii, the view's west edge crosses -180 into the noWrap void; the void
+  // side clamps off and the visible [-180, -150] survives (Hawaii at -157 stays fetchable).
+  assert.deepEqual(sanitizeBbox({ west: -190, south: 20, east: -150, north: 60 }),
     [-180, 20, -150, 60]);
+});
+
+test("sanitizeBbox drops the void past +180 instead of wrapping it into Alaska/Hawaii", () => {
+  // World panning is unlocked and tiles are noWrap: a view panned east past +180 shows VOID, not a
+  // wrapped world copy. The old wrap turned east=210 into -150 and fetched Hawaii for a screen
+  // showing Kamchatka — clamp keeps only what is physically visible.
+  assert.deepEqual(sanitizeBbox({ west: 150, south: 20, east: 210, north: 60 }),
+    [150, 20, 180, 60]);
+  // Entirely beyond +180 = nothing but void on screen -> no fetch at all.
+  assert.equal(sanitizeBbox({ west: 200, south: 20, east: 250, north: 60 }), null);
 });
 
 test("sanitizeBbox clamps latitudes to ±90", () => {
@@ -57,12 +67,40 @@ test("sanitizeBbox keeps east=180 as 180 (does not wrap it to -180)", () => {
     [100, 0, 180, 50]);
 });
 
-test("sanitizeBbox straddle keeps data visible on BOTH sides of the wrap (review fix #11)", () => {
-  // west=-100 east=210: a >300° view showing [-100..180]∪[-180..-150]. US data at lon -100..-64 is
-  // on screen via the western segment — the straddle shortcut must extend east to keep it.
+test("sanitizeBbox keeps visible US data when a very wide view runs past +180", () => {
+  // west=-100 east=210: a >300° view. Everything visible lives in [-100, 180] (beyond +180 is
+  // noWrap void) — the clamp keeps the whole visible range, Columbus included, and no longer
+  // fabricates an off-screen [-180, -150] segment the way the old wrap did.
   const out = sanitizeBbox({ west: -100, south: 20, east: 210, north: 50 });
-  assert.deepEqual(out, [-180, 20, -64, 50]);
+  assert.deepEqual(out, [-100, 20, 180, 50]);
   assert.ok(out[0] <= -83 && -83 <= out[2], "Columbus (-83) must stay fetchable");
+});
+
+// --- bboxIntersects (the "is any US territory on screen?" gate) --------------------------------
+
+test("bboxIntersects: overlapping, contained, and disjoint boxes", () => {
+  assert.equal(bboxIntersects([-100, 30, -80, 45], US_DATA_ENVELOPE), true);   // inside the US
+  assert.equal(bboxIntersects([-190, 10, -170, 20], US_DATA_ENVELOPE), true);  // clips the corner
+  assert.equal(bboxIntersects([-56, 35, 60, 65], US_DATA_ENVELOPE), false);    // Europe at min zoom
+  assert.equal(bboxIntersects([100, 20, 180, 60], US_DATA_ENVELOPE), false);   // east Asia/void side
+});
+
+test("bboxIntersects: edge-touching does not count as overlap", () => {
+  // The envelope's east edge is -60; a view starting exactly there shows no US data.
+  assert.equal(bboxIntersects([-60, 20, -10, 50], US_DATA_ENVELOPE), false);
+  assert.equal(bboxIntersects([-61, 20, -10, 50], US_DATA_ENVELOPE), true);
+});
+
+test("inUSCoverage: real data territory counts, the envelope's empty ocean padding does not", () => {
+  assert.equal(inUSCoverage([-100, 30, -80, 45]), true);      // CONUS
+  assert.equal(inUSCoverage([-155, 55, -140, 65]), true);     // Alaska
+  assert.equal(inUSCoverage([-160, 18, -154, 23]), true);     // Hawaii
+  assert.equal(inUSCoverage([-67, 17.5, -65, 19]), true);     // Puerto Rico
+  // A min-zoom view just east of Maine clips ONLY the envelope's dataless Atlantic padding
+  // ([-66,-60]) — that view shows blank ocean and must get the coverage banner, not silence.
+  assert.equal(inUSCoverage([-63, 30, 57, 55]), false);
+  assert.equal(inUSCoverage([-56, 35, 60, 65]), false);       // Europe at min zoom
+  assert.equal(inUSCoverage(null), false);
 });
 
 // --- isNationalView (region-collapse gate) ----------------------------------------------------

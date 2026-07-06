@@ -31,6 +31,7 @@ const SHEET_HALF = 0.55;
 let map = null;
 let panelEl = null, bodyEl = null, titleEl = null, subEl = null, addrEl = null, dirEl = null, grabEl = null, tabEl = null;
 let currentId = null;
+let currentLatLng = null; // the selected pin's position — rail-inset changes re-center on it
 let opener = null;
 let onCloseCbs = [];
 let histOwned = false;   // we pushed a history entry for the open panel
@@ -284,19 +285,25 @@ function setCollapsed(collapsed) {
   tabEl.title = label; // native hover tooltip (both states)
 }
 
-// Keep the selected marker centered in the UNCOVERED map area (the map div never resizes).
+// Keep the selected marker centered in the VISIBLE map area. Desktop rails INSET the map (B6 —
+// the css :has rules shift #map's left/right edges, then a debounced invalidateSize in main.js
+// re-measures), so container coordinates become honest once the .2s inset settles. This runs at
+// open time, BEFORE the right inset has applied — so compute the FINAL visible center in
+// VIEWPORT coordinates from layout truth, then translate it into the CURRENT container box.
+// Exact whether the panel is just opening (container still full-width), mid-transition, or
+// already open on a pin switch (container already inset — the correction collapses to zero).
 function offsetPan(latlng) {
   if (!latlng) return;
   const p = map.latLngToContainerPoint(latlng);
   const size = map.getSize();
   let tx, ty;
   if (isDesktop()) {
-    // Right dock: center the marker in the map area to the LEFT of the panel. If the list drawer
-    // is open on the left, bias the center rightward so the pin clears it too.
-    const pw = Math.min(PANEL_W, size.x - 56);
     const listEl = document.getElementById("list-panel");
-    const lw = listEl && listEl.classList.contains("open") ? listEl.getBoundingClientRect().width : 0;
-    tx = lw + (size.x - pw - lw) / 2;
+    const listOpen = listEl && listEl.classList.contains("open") && !listEl.classList.contains("collapsed");
+    const left = listOpen ? 340 : 0;                          // .list-panel width (rail inset)
+    const right = Math.min(PANEL_W, window.innerWidth * 0.4); // .place-panel --pp-w: min(400px, 40vw)
+    const rect = map.getContainer().getBoundingClientRect();
+    tx = left + (window.innerWidth - left - right) / 2 - rect.left;
     ty = size.y / 2;
   } else {
     tx = size.x / 2;
@@ -308,6 +315,7 @@ function offsetPan(latlng) {
 export function closePlacePanel() {
   if (!currentId) return;
   currentId = null;
+  currentLatLng = null;
   flushCloseHooks();
   setHidden(true);
   setCollapsed(false);
@@ -338,6 +346,7 @@ export async function openPlacePanel(latlng, id) {
 
   const switching = currentId !== null;
   currentId = id;
+  currentLatLng = latlng || null;
   if (switching) flushCloseHooks(); // ghost markers etc. from the previous place
 
   titleEl.textContent = "Loading location…";
@@ -380,6 +389,7 @@ export async function openPlacePanel(latlng, id) {
   addrEl.textContent = at || "Get directions";
   if (dirEl) dirEl.href = `https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lon}`;
   subEl.textContent = `${orgTypeLabel(d.org_type)}${d.org_name ? ` · ${d.org_name}` : ""}`;
+  if (d.lat != null && !currentLatLng) currentLatLng = L.latLng(d.lat, d.lon);
   if (!latlng && d.lat != null) offsetPan(L.latLng(d.lat, d.lon));
 
   // Owner's T-sketch: photos full-width on top; essentials band; then details|community columns
@@ -455,6 +465,21 @@ export function initPlacePanel(m) {
 
   app.closePanel = closePlacePanel;
   app.panelOnceClose = panelOnceClose;
+  // Rail-inset changes (map.js initMapInsets) call this so the selected pin never ends up parked
+  // under a rail that just opened. PRECISE by design: it rescues ONLY a pin sitting inside a rail
+  // band right now — a user who deliberately panned the map away keeps their view (the panel is
+  // non-modal, panning behind it is normal), and a collapsed place panel means the full width is
+  // visible with nothing to rescue from.
+  app.recenterSelection = () => {
+    if (!currentId || !currentLatLng || !isDesktop()) return;
+    if (panelEl.classList.contains("collapsed")) return;
+    const rect = map.getContainer().getBoundingClientRect();
+    const vx = map.latLngToContainerPoint(currentLatLng).x + rect.left;
+    const railRight = window.innerWidth - Math.min(PANEL_W, window.innerWidth * 0.4);
+    const underLeftRail = vx >= 0 && vx < rect.left;           // the list rail's band
+    const underRightRail = vx > railRight && vx <= window.innerWidth; // the place rail's band
+    if (underLeftRail || underRightRail) offsetPan(currentLatLng);
+  };
 
   panelEl.querySelector(".pp-close").onclick = () => closePlacePanel();
   panelEl.addEventListener("keydown", (e) => { if (e.key === "Escape") closePlacePanel(); });
