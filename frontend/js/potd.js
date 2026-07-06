@@ -103,13 +103,15 @@ export async function mountPotdPlaceholder(hostEl) {
 // (b) First-visit welcome hero. A bounded, NON-MODAL, closable card (never covers the whole map)
 // that explains what OpenDrop is, shows the POTD image + attribution, and sets a localStorage flag
 // on close so it shows exactly once. No-op if already seen or POTD is unavailable.
-export async function maybeShowWelcomeHero() {
-  try {
-    if (localStorage.getItem(WELCOME_KEY)) return;
-  } catch (e) {
-    return;  // storage blocked (private mode) -> skip rather than risk showing it every load
+export async function maybeShowWelcomeHero(force) {
+  if (!force) {
+    try {
+      if (localStorage.getItem(WELCOME_KEY)) return;
+    } catch (e) {
+      return;  // storage blocked (private mode) -> skip rather than risk showing it every load
+    }
   }
-  if (document.querySelector(".welcome-hero")) return;  // guard against a double-call
+  if (document.querySelector(".welcome-overlay")) return;  // already open (e.g. re-tapped "about")
   const potd = await getPotd();
   if (!potd) return;
 

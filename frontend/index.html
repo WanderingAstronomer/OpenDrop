@@ -38,10 +38,11 @@
        a gradient scrim with safe-area padding. The bar itself is click-transparent (pointer-events
        none) so any empty band never steals map interaction; children re-enable pointer events. -->
   <div class="topbar">
-    <!-- Brand mark (icon + wordmark lockup). Crops to the icon third on mobile so the corner is
-         never empty but the search keeps the width. -->
+    <!-- Brand mark. Mobile shows the dedicated square ICON; desktop shows the full wordmark lockup —
+         no more cropping the wordmark into a makeshift icon. -->
     <div class="brand">
-      <picture>
+      <img class="brand-icon" src="opendrop-icon.svg" alt="OpenDrop" width="44" height="44" />
+      <picture class="brand-wordmark">
         <source srcset="opendrop-logo.webp" type="image/webp" />
         <img class="brand-logo" src="opendrop-logo.png" alt="OpenDrop" width="865" height="240" />
       </picture>
@@ -57,18 +58,29 @@
       <div id="search-live" class="sr-only" role="status" aria-live="polite"></div>
     </div>
 
-    <!-- Action cluster: layers is always here; the legend/theme pair (#util-cluster) lives here on
-         desktop and is relocated by js/chrome.js to a bottom-left FAB stack on mobile. -->
+    <!-- Menu: a hamburger that drops a vertical icon RAIL (about / legend / theme / layers).
+         Clicking a rail icon opens its menu to the LEFT; theme toggles inline; about re-opens the
+         welcome card. Same on desktop + mobile — wired in js/chrome.js. -->
     <div class="topbar-actions">
-      <button id="layers-btn" class="bar-btn" type="button" aria-label="Map layers" aria-haspopup="true"
-              aria-expanded="false" aria-controls="layers-pop" title="Map layers">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9"
-             stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5 9-5z"></path><path d="M3 13l9 5 9-5"></path></svg>
+      <button id="menu-btn" class="bar-btn" type="button" aria-label="Menu" aria-haspopup="true"
+              aria-expanded="false" aria-controls="menu-rail" title="Menu">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
       </button>
-      <div id="util-cluster" class="util-cluster in-bar">
-        <button id="legend-btn" class="bar-btn" type="button" aria-label="Location confidence legend"
-                aria-haspopup="true" aria-expanded="false" aria-controls="legend-pop" title="What the colors mean">i</button>
-        <button id="theme-toggle" class="bar-btn theme-toggle" type="button" aria-label="Switch theme" title="Switch theme">☾</button>
+      <div id="menu-rail" class="menu-rail" role="menu" aria-label="Map tools" hidden>
+        <button id="info-btn" class="bar-btn rail-btn" type="button" role="menuitem" aria-label="About OpenDrop" title="About OpenDrop">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 11.2v5"></path><circle cx="12" cy="7.6" r="0.7" fill="currentColor" stroke="none"></circle></svg>
+        </button>
+        <button id="legend-btn" class="bar-btn rail-btn" type="button" role="menuitem" aria-haspopup="true"
+                aria-expanded="false" aria-controls="legend-pop" aria-label="Location confidence legend" title="What the pin colors mean">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+        </button>
+        <button id="theme-toggle" class="bar-btn rail-btn theme-toggle" type="button" role="menuitem" aria-label="Switch theme" title="Switch theme">☾</button>
+        <button id="layers-btn" class="bar-btn rail-btn" type="button" role="menuitem" aria-haspopup="true"
+                aria-expanded="false" aria-controls="layers-pop" aria-label="Map layers" title="Map layers">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9"
+               stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5 9-5z"></path><path d="M3 13l9 5 9-5"></path></svg>
+        </button>
       </div>
     </div>
   </div>

@@ -227,10 +227,12 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
    picker both live here now, opened from the top-bar action cluster (or the mobile FABs) — nothing
    is permanently parked over the map corners anymore. */
 .pop-backdrop { position: fixed; inset: 0; z-index: calc(var(--z-pop) - 1); background: transparent; }
+/* Popovers open to the LEFT of the menu rail (which is ~44px wide at the right gutter). */
 .map-pop {
-  position: fixed; top: calc(env(safe-area-inset-top) + 72px); right: 12px; z-index: var(--z-pop);
+  position: fixed; top: calc(env(safe-area-inset-top) + 64px); right: 66px; z-index: var(--z-pop);
   width: 236px; padding: 8px; background: var(--surface); color: var(--ink);
   border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
+  animation: rail-drop .16s ease-out;
 }
 #legend-pop { width: 254px; padding: 16px; }
 .pop-row {
@@ -285,9 +287,19 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
   border-radius: 12px; font-size: 16px; font-weight: 700; line-height: 1; cursor: pointer;
 }
 .bar-btn:hover { background: var(--surface-2); color: var(--ink); }
+.bar-btn[aria-expanded="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 .theme-toggle { font-size: 17px; }
-.topbar-actions { display: flex; align-items: center; gap: 8px; flex: none; }
-.util-cluster.in-bar { display: flex; align-items: center; gap: 8px; }
+
+/* Menu: the hamburger sits in the bar; the rail drops straight down from it (top-right), and the
+   legend/layers popovers open to the rail's LEFT (see .map-pop). */
+.topbar-actions { position: relative; display: flex; align-items: center; flex: none; }
+.menu-rail {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: var(--z-pop);
+  display: flex; flex-direction: column; gap: 8px; animation: rail-drop .16s ease-out;
+}
+.menu-rail[hidden] { display: none; }
+.rail-btn { box-shadow: var(--shadow); }
+@keyframes rail-drop { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 
 /* ---- TOP BAR (z30) -----------------------------------------------------------------------------
    The redesign's chrome bar: brand | flex search | action cluster. Desktop (>=1024px): a full-width
@@ -304,8 +316,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 }
 .topbar > * { pointer-events: auto; }
 
-/* Brand lockup (icon + wordmark, 2:1 image). The bar is the surface — no card chrome of its own. */
+/* Brand lockup. Desktop shows the wordmark; mobile shows the dedicated square icon (below). */
 .brand { flex: 0 0 auto; line-height: 0; }
+.brand-icon { display: none; }
 .brand-logo { display: block; height: 44px; width: auto; }
 /* Mobile: the bar floats on a scrim instead of being a solid surface, and the brand crops to a
    44px icon-only card (the wordmark art is the right two-thirds of the image). */
@@ -317,12 +330,14 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
                 color-mix(in srgb, var(--surface) 40%, transparent) 80%, transparent);
     border-bottom: none; backdrop-filter: none; -webkit-backdrop-filter: none;
   }
+  /* Mobile: the dedicated square icon in a card — no more cropping the wordmark into an "icon". */
   .brand {
-    overflow: hidden; width: 44px; height: 44px; padding: 7px;
+    display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 6px;
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 12px; box-shadow: var(--shadow-sm);
   }
-  .brand-logo { height: 30px; }
+  .brand-wordmark { display: none; }
+  .brand-icon { display: block; width: 100%; height: 100%; object-fit: contain; }
 }
 
 /* Bottom-right control stack (z10): zoom pill above locate above the Add CTA. The attribution
@@ -751,11 +766,7 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
   /* FABs ride above the resting sheet; the zoom pill yields to pinch on touch layouts */
   .zoom-ctl { display: none; }
   .map-ctl-br { bottom: calc(env(safe-area-inset-bottom) + max(92px, 13dvh) + 12px); }
-  .util-cluster:not(.in-bar) {
-    position: fixed; left: 16px; bottom: calc(env(safe-area-inset-bottom) + max(92px, 13dvh) + 12px);
-    z-index: var(--z-ctl); display: flex; flex-direction: column; gap: 12px;
-  }
-  .util-cluster:not(.in-bar) .bar-btn { width: 48px; height: 48px; border-radius: 14px; box-shadow: var(--shadow-sm); }
+  /* (legend/theme/layers live in the top-right menu rail on all sizes now — no bottom-left FABs) */
   /* attribution pill sits just above the resting sheet */
   .leaflet-bottom.leaflet-left { bottom: calc(max(92px, 13dvh) + 8px); }
   /* welcome greeting is a centered overlay at all sizes now — nothing sheet-specific to do */
@@ -1083,7 +1094,7 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
   .locate-btn, .locate-btn:hover { transform: none; }
   .locate-btn.busy svg { animation: odc-pulse 1s ease-in-out infinite; }
   .odc-pending { animation: none; stroke: #a855f7 !important; stroke-width: 2 !important; filter: drop-shadow(0 0 3px rgba(168, 85, 247, 0.9)); }
-  .welcome-hero, .welcome-overlay { animation: none; }
+  .welcome-hero, .welcome-overlay, .menu-rail, .map-pop { animation: none; }
   html { scroll-behavior: auto; }
 }
 
