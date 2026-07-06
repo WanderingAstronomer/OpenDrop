@@ -91,8 +91,10 @@ export async function mountPhotos(host, locId) {
   // Wire handlers BEFORE the await so a slow/failed fetch can never leave the buttons inert.
   gallery.onclick = () => openGallery(locId);
   add.onclick = () => openUpload(locId);
-  const data = await fetchImages(locId, false);
-  const imgs = data.images || [];
+  // Fetch ALL statuses and hide only DOWNVOTED ('hidden') below — a brand-new 'pending' photo now
+  // shows here (badged) so it can actually be found and confirmed, instead of dying invisible.
+  const data = await fetchImages(locId, true);
+  const imgs = (data.images || []).filter((im) => im.status !== "hidden"); // pending + visible
   if (data.failed) {
     gallery.textContent = "Photos";
     const top = host.querySelector(".ph-top");
@@ -103,14 +105,18 @@ export async function mountPhotos(host, locId) {
   gallery.textContent = `Photos (${imgs.length})`;
   const top = host.querySelector(".ph-top");
   if (imgs.length) {
-    top.innerHTML = `<img class="ph-thumb" src="${imgs[0].url}" alt="Open photo gallery" ` +
-      `role="button" tabindex="0" loading="lazy" />`;
+    const first = imgs[0];
+    const pending = first.status === "pending"; // top photo still awaiting its first vouch
+    top.innerHTML =
+      `<div class="ph-thumb-wrap">` +
+      `<img class="ph-thumb" src="${first.url}" alt="Open photo gallery" role="button" tabindex="0" loading="lazy" />` +
+      (pending ? `<span class="ph-thumb-badge">Unverified · tap to confirm</span>` : "") +
+      `</div>`;
     const thumb = top.querySelector("img");
     attachFallback(thumb);
-    thumb.onclick = () => openGallery(locId);
-    thumb.onkeydown = (e) => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openGallery(locId); }
-    };
+    const open = () => openGallery(locId);
+    thumb.onclick = open;
+    thumb.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } };
   } else {
     // No community photos yet: show Wikimedia's picture of the day as an attributed placeholder
     // (no-op if POTD is unavailable). The "Photos (0)" count + "Add photo" button are untouched.
@@ -131,7 +137,7 @@ async function openGallery(locId, includeLow = false) {
   m.innerHTML =
     `<div class="modal-card photo-card" role="dialog" aria-modal="true" aria-label="Photos">` +
     `<div class="modal-head"><strong>Photos</strong>` +
-    `<label class="ph-low"><input type="checkbox" ${includeLow ? "checked" : ""}/> show low-rated / unverified</label>` +
+    `<label class="ph-low"><input type="checkbox" ${includeLow ? "checked" : ""}/> show low-rated photos</label>` +
     `<button class="modal-close" aria-label="Close">✕</button></div>` +
     `<div class="ph-grid" aria-busy="true"></div></div>`;
   m.querySelector(".modal-close").onclick = closeModal;
@@ -149,7 +155,7 @@ async function renderGrid(m, locId, includeLow) {
   if (!grid) return;
   const seq = ++galleryReq;
   grid.setAttribute("aria-busy", "true");
-  const data = await fetchImages(locId, includeLow);
+  const data = await fetchImages(locId, true); // always fetch all; `includeLow` only reveals DOWNVOTED
   if (seq !== galleryReq || !grid.isConnected) return;  // a newer toggle/refresh superseded this one
   grid.removeAttribute("aria-busy"); // ALWAYS clear busy on the live path — never hang on a failure
   grid.innerHTML = "";
@@ -159,7 +165,7 @@ async function renderGrid(m, locId, includeLow) {
     grid.querySelector(".ph-retry").onclick = () => renderGrid(m, locId, includeLow);
     return;
   }
-  const imgs = data.images || [];
+  const imgs = (data.images || []).filter((im) => includeLow || im.status !== "hidden");
   if (!imgs.length) {
     grid.innerHTML = `<p class="ph-empty">No photos yet — add the first one.</p>`;
     return;
@@ -172,7 +178,8 @@ async function renderGrid(m, locId, includeLow) {
       `<a href="${im.url}" target="_blank" rel="noopener"><img src="${im.url}" alt="Location photo" loading="lazy" /></a>` +
       `<div class="ph-meta">` +
       (im.is_correction ? `<span class="ph-badge">Pin fix${im.applied ? " ✓ applied" : ""}</span>` : "") +
-      (im.status !== "visible" ? `<span class="ph-badge low">${im.status}</span>` : "") +
+      (im.status === "pending" ? `<span class="ph-badge">Unverified — help confirm</span>` : "") +
+      (im.status === "hidden" ? `<span class="ph-badge low">Low-rated</span>` : "") +
       `<span class="ph-score">👍 ${im.upvotes} 👎 ${im.downvotes}</span></div>` +
       `<div class="ts ph-ts"></div>` +
       `<div class="ph-votes"><button class="btn tiny ph-h" type="button">Helpful</button>` +
@@ -239,7 +246,12 @@ async function doVote(imgId, vote, m, locId, includeLow, tsHost, btn, otherBtn) 
   } catch (e) {
     if (otherBtn) otherBtn.disabled = false; // restore the sibling for retry (guard() restored `btn`)
     if (e.status === 403) toast(verifyFailMessage(), "error");
+    // 409 = self_vote: you can't vouch for your own photo (same IP as the uploader). Say so plainly —
+    // the old generic "couldn't record your rating" read as a server failure. NOTE: a phone upload and
+    // a desktop vote on the SAME network share a public IP, so this fires even across your own devices.
+    else if (e.status === 409) toast("You can't confirm your own photo — someone else has to vouch for it", "error");
     else if (e.status === 429) toast("You already rated this photo", "error");
+    else if (e.status === 404) toast("That photo is no longer available", "error");
     else toast("Couldn't record your rating", "error");
   }
 }
@@ -285,8 +297,8 @@ function openUpload(locId) {
         btn.textContent = "Uploading…";
         return uploadImage(locId, file, token, null);
       });
-      toast("Photo uploaded — it appears once the community confirms it", "success");
-      closeModal();
+      toast("Photo added — it shows now, marked unverified until the community confirms it", "success");
+      openGallery(locId); // swap the upload form for the gallery so they see their photo (pending) right away
     } catch (err) {
       if (err.status === 403) toast(verifyFailMessage(), "error");
       else if (err.status === 413) toast("Image too large (max ~6 MB)", "error");
