@@ -138,7 +138,8 @@ async function refresh() {
     // nationwide counts (not whatever slice the padded viewport happened to cover), and the one
     // cached response then serves every national pan.
     const fetchBbox = national ? US_DATA_ENVELOPE : expandBbox(bbox, OVERFETCH);
-    const data = await fetchLocations(fetchBbox, "auto", types);
+    // Pass the map zoom so the server picks the density tier (state band vs zoom-aware grid, B8).
+    const data = await fetchLocations(fetchBbox, "auto", types, zoom);
     if (seq !== reqSeq) return; // superseded by a newer pan or a mutation — drop this response
     cache = { bbox: fetchBbox, zoom, types, national, data };
     present(data, bbox);

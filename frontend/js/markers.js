@@ -2,8 +2,8 @@ import { bucketColor } from "./confidence.js";
 import { openPlacePanel, panelOnceClose } from "./panel.js";
 import { onThemeChange } from "./theme.js";
 import {
-  REGION_COLLAPSE_SPAN_DEG, binPoints, computeDiff, formatCount, isNationalView, partitionRegions,
-  prefersReducedMotion,
+  REGION_COLLAPSE_SPAN_DEG, binPoints, bubbleSize, computeDiff, formatCount, isNationalView,
+  partitionRegions, prefersReducedMotion,
 } from "./viewport.js";
 
 let map = null;
@@ -122,10 +122,11 @@ function makePointMarker(f) {
 }
 
 // --- server cluster bubbles (DOM divIcons) -----------------------------------------------------
-// Build (but do NOT add) a bubble marker. Diameter scales with the log of the count; the label is
-// pre-formatted. The caller batches the returned markers into serverLayer in one pass.
+// Build (but do NOT add) a bubble marker. Diameter scales with the log of the count (bubbleSize,
+// capped below the server cell so grid bubbles never touch); the label is pre-formatted. The caller
+// batches the returned markers into serverLayer in one pass.
 function makeBubble(lat, lon, count, label, onClick, extraClass = "") {
-  const size = Math.round(Math.min(64, 34 + Math.log2(count + 1) * 4));
+  const size = bubbleSize(count);
   const icon = L.divIcon({
     html: `<div class="odc-cluster ${extraClass}" style="width:${size}px;height:${size}px">${label}</div>`,
     className: "",
@@ -186,13 +187,19 @@ export function render(data, bbox) {
         }, "odc-region"));
       });
     } else {
-      // State/metro views: merge server cells on a screen-pixel grid so bubble density is capped by
-      // pixels, not by how many degree-cells the server happened to cut.
-      const pts = cells.map((c) => {
-        const p = map.latLngToContainerPoint([c.lat, c.lon]);
-        return { x: p.x, y: p.y, lat: c.lat, lon: c.lon, count: c.count };
-      });
-      binPoints(pts, BIN_PX).forEach((c) => {
+      // Below national, the server (B8) hands back one of two de-overlapped tiers:
+      //  - "state": one bubble per state at its centroid — render AS-IS. Pixel-binning here would
+      //    merge nearby states (New England) into one bubble, and which ones merge would depend on
+      //    the pan (container-pixel grid), so bubbles would flicker/jump as you drag.
+      //  - "grid" (or a legacy z-less response): cells sit on world-grid vertices already spaced by
+      //    the zoom-aware cell, so binPoints is a safeguard that no-ops when the cell >= BIN_PX.
+      const outCells = data.tier === "state"
+        ? cells
+        : binPoints(cells.map((c) => {
+          const p = map.latLngToContainerPoint([c.lat, c.lon]);
+          return { x: p.x, y: p.y, lat: c.lat, lon: c.lon, count: c.count };
+        }), BIN_PX);
+      outCells.forEach((c) => {
         bubbles.push(makeBubble(c.lat, c.lon, c.count, formatCount(c.count),
           () => map.flyTo([c.lat, c.lon], Math.min(map.getZoom() + 3, 16), { animate: !prefersReducedMotion() })));
       });

@@ -540,13 +540,13 @@ body:has(#submit-panel:not(.hidden)) .list-pill { display: none; }
 /* Cluster icon */
 .odc-cluster {
   display: flex; align-items: center; justify-content: center; border-radius: 50%;
-  background: var(--brand); color: #fff; font-weight: 700; font-size: 13px;
+  background: var(--brand); color: #fff; font-weight: 700; font-size: 14px;
   border: 2px solid #ffffff; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
   contain: layout style;
 }
 .odc-cluster:hover { background: color-mix(in srgb, var(--brand) 88%, white); }
 /* National-view AK / HI / CONUS totals — bolder than ordinary grid bubbles */
-.odc-cluster.odc-region { background: var(--accent); font-size: 15px; font-weight: 800; }
+.odc-cluster.odc-region { background: var(--accent); font-size: 16px; font-weight: 800; }
 .odc-cluster.odc-region:hover { background: color-mix(in srgb, var(--accent) 88%, white); }
 
 /* A pin with an OPEN community proposal (pin move / detail change) awaiting confirmations —

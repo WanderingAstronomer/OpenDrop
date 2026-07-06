@@ -6,8 +6,8 @@ import assert from "node:assert/strict";
 
 import {
   sanitizeBbox, expandBbox, bboxContains, bboxIntersects, filterFeaturesToBbox, inUSCoverage,
-  isNationalView, partitionRegions, regionOf, binPoints, formatCount, REGIONS, US_DATA_ENVELOPE,
-  prefersReducedMotion, cacheHit, computeDiff,
+  isNationalView, partitionRegions, regionOf, binPoints, bubbleSize, BUBBLE_MAX_PX, formatCount,
+  REGIONS, US_DATA_ENVELOPE, prefersReducedMotion, cacheHit, computeDiff,
 } from "../js/viewport.js";
 
 // --- sanitizeBbox ---------------------------------------------------------------------------
@@ -199,6 +199,32 @@ test("binPoints leaves already-sparse cells untouched", () => {
     { x: 300, y: 300, lat: 41, lon: -82, count: 4 },
   ], 72);
   assert.equal(out.length, 2);
+});
+
+// --- cluster bubble sizing (de-overlap invariant) -----------------------------------------------
+
+test("bubbleSize grows with count but never exceeds the de-overlap cap", () => {
+  // The whole point: a grid bubble must stay smaller than the server's on-screen cell (~82px) so
+  // vertex-spaced neighbours can't touch. The cap is the load-bearing guarantee.
+  for (const n of [0, 1, 5, 50, 500, 5000, 500000]) {
+    const s = bubbleSize(n);
+    assert.ok(s <= BUBBLE_MAX_PX, `size ${s} for count ${n} exceeds the cap`);
+    assert.ok(s >= 30, `size ${s} for count ${n} is implausibly small`);
+  }
+});
+
+test("bubbleSize is monotonic non-decreasing in count", () => {
+  let prev = 0;
+  for (const n of [1, 2, 10, 100, 1000, 10000, 100000]) {
+    const s = bubbleSize(n);
+    assert.ok(s >= prev, `size dropped at count ${n}`);
+    prev = s;
+  }
+});
+
+test("bubbleSize hits the cap by the thousands and stays there", () => {
+  assert.equal(bubbleSize(2000), BUBBLE_MAX_PX);
+  assert.equal(bubbleSize(50000), BUBBLE_MAX_PX);
 });
 
 // --- label formatting ---------------------------------------------------------------------------

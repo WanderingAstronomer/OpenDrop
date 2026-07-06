@@ -191,6 +191,15 @@ export function binPoints(points, cellPx) {
   }));
 }
 
+// Cluster-bubble diameter (px) from its count. Grows with log(count) and is CAPPED below the
+// server's on-screen cell edge (backend CLUSTER_TARGET_PX ≈ 82px), so grid-tier bubbles — which sit
+// on grid vertices one cell apart — can never touch. Trimmed ~12% from the earlier 34 + log2·4 /
+// cap-64 (which hit the full 64px bin width and collided with its neighbours) per the density pass.
+export const BUBBLE_MAX_PX = 56;
+export function bubbleSize(count) {
+  return Math.round(Math.min(BUBBLE_MAX_PX, 30 + Math.log2((count || 0) + 1) * 3.6));
+}
+
 // Compact bubble labels: 999 -> "999", 1500 -> "1.5k", 16204 -> "16k".
 export function formatCount(n) {
   if (n < 1000) return String(n);

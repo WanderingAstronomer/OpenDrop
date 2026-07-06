@@ -20,10 +20,25 @@ router = APIRouter()
 
 _POINT = "ST_SetSRID(ST_MakePoint(%s, %s), 4326)"  # args: (lon, lat)
 
+# Density engine (B8). At cluster zooms we return one bubble per "cell"; the cell size is derived
+# from the map ZOOM (slippy-tile math) so on-screen bubble density is CONSTANT at every zoom and on
+# every device — instead of the old bbox_span/32 that always cut ~32 cells across the viewport
+# (confetti at every zoom). TARGET_PX is the intended on-screen cell edge in CSS px; the frontend
+# caps bubble diameter below it so grid bubbles never touch.
+CLUSTER_TARGET_PX = 82.0
+# At or below this zoom the view spans several states — aggregate GROUP BY state ("one bubble per
+# state", the owner's ask for the first zoom-ins) instead of a grid. Above it, the zoom-aware grid.
+STATE_BAND_MAX_Z = 6.0
+# Web-Mercator world width in CSS px at zoom z is 256 * 2**z, covering 360°. One TARGET_PX-wide cell
+# is therefore this many degrees. Floored so a degenerate tiny cell can't be requested.
+def cluster_cell_deg(z: float) -> float:
+    return max(360.0 / (2.0 ** z) * (CLUSTER_TARGET_PX / 256.0), 0.005)
+
 
 @router.get("/locations")
 async def list_locations(bbox: str, types: str | None = None,
-                         min_confidence: float = Query(0.0, ge=0, le=100), cluster: str = "auto"):
+                         min_confidence: float = Query(0.0, ge=0, le=100), cluster: str = "auto",
+                         z: float | None = Query(None, ge=0, le=24)):
     try:
         west, south, east, north = (float(x) for x in bbox.split(","))
     except Exception:  # noqa: BLE001
@@ -81,20 +96,51 @@ async def list_locations(bbox: str, types: str | None = None,
                 })
             return {"mode": "points", "type": "FeatureCollection", "features": features}
 
-        # cluster mode: grid-aggregate via ST_SnapToGrid, return cell centroids
-        cell = max(max(east - west, north - south) / 32.0, 0.005)
-        cur = await conn.execute(
-            f"""SELECT avg(ST_X(geom)) AS lon, avg(ST_Y(geom)) AS lat,
-                       count(*) AS cnt, avg(confidence) AS ac
-                FROM locations WHERE {where}
-                GROUP BY ST_SnapToGrid(geom, %s, %s)
-                LIMIT %s""",
-            params + [cell, cell, settings.cluster_cap],
-        )
+        # Cluster mode, two tiers (B8). The map passes its zoom `z`; from it we pick the aggregation.
+        #  - z is None (a client that predates the density engine): keep the legacy bbox_span/32 grid
+        #    so nothing regresses during the deploy window (state band + zoom cell need z).
+        #  - z <= STATE_BAND_MAX_Z (wide, several states): ONE BUBBLE PER STATE at the state's data
+        #    centroid; the ~0.4% of rows with no state fall back to a coarse grid cell so they stay
+        #    visible and don't pile onto one phantom centroid.
+        #  - otherwise: a ZOOM-AWARE grid — cell = f(z), snapped to grid VERTICES (evenly spaced by
+        #    the cell, so bubbles are de-overlapped when the frontend caps their diameter < cell).
+        if z is None:
+            tier = "grid"
+            cell = max(max(east - west, north - south) / 32.0, 0.005)
+            cur = await conn.execute(
+                f"""SELECT avg(ST_X(geom)) AS lon, avg(ST_Y(geom)) AS lat,
+                           count(*) AS cnt, avg(confidence) AS ac
+                    FROM locations WHERE {where}
+                    GROUP BY ST_SnapToGrid(geom, %s, %s) LIMIT %s""",
+                params + [cell, cell, settings.cluster_cap],
+            )
+        elif z <= STATE_BAND_MAX_Z:
+            tier = "state"
+            cell = cluster_cell_deg(z)  # only the null-state fallback grid uses it
+            # ORDER BY count DESC before the cap: if a view ever exceeds cluster_cap groups, the
+            # DENSEST survive and only the sparsest are dropped (a graceful truncation, not arbitrary).
+            cur = await conn.execute(
+                f"""SELECT avg(ST_X(geom)) AS lon, avg(ST_Y(geom)) AS lat,
+                           count(*) AS cnt, avg(confidence) AS ac
+                    FROM locations WHERE {where}
+                    GROUP BY COALESCE(NULLIF(state, ''), ST_AsText(ST_SnapToGrid(geom, %s, %s)))
+                    ORDER BY count(*) DESC LIMIT %s""",
+                params + [cell, cell, settings.cluster_cap],
+            )
+        else:
+            tier = "grid"
+            cell = cluster_cell_deg(z)
+            cur = await conn.execute(
+                f"""SELECT ST_X(g) AS lon, ST_Y(g) AS lat, count(*) AS cnt, avg(confidence) AS ac
+                    FROM (SELECT ST_SnapToGrid(geom, %s, %s) AS g, confidence
+                          FROM locations WHERE {where}) t
+                    GROUP BY g ORDER BY count(*) DESC LIMIT %s""",
+                [cell, cell] + params + [settings.cluster_cap],
+            )
         clusters = [{"lon": float(r["lon"]), "lat": float(r["lat"]),
                      "count": r["cnt"], "avg_confidence": round(float(r["ac"]), 1)}
                     for r in await cur.fetchall()]
-        return {"mode": "clusters", "clusters": clusters}
+        return {"mode": "clusters", "tier": tier, "clusters": clusters}
 
 
 @router.get("/locations/{loc_id}")

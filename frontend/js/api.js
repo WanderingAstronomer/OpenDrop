@@ -3,9 +3,12 @@ import { API } from "./config.js";
 // `bbox` is a pre-sanitized [west, south, east, north] array (see viewport.sanitizeBbox — raw
 // Leaflet bounds can exceed ±180 at low zooms and would 400). Throws {status, ...body} so callers
 // can tell a client-side rejection (4xx) from a server/network failure.
-export async function fetchLocations(bbox, cluster = "auto", types = null) {
+// `z` (map zoom) drives the cluster density tier server-side (B8 — state band vs zoom-aware grid);
+// omitted for points-mode callers, where it has no effect.
+export async function fetchLocations(bbox, cluster = "auto", types = null, z = null) {
   const params = new URLSearchParams({ bbox: bbox.join(","), cluster });
   if (types) params.set("types", types);
+  if (z != null) params.set("z", z);
   const r = await fetch(`${API}/locations?${params.toString()}`);
   if (!r.ok) throw { status: r.status, ...(await r.json().catch(() => ({}))) };
   return r.json();
