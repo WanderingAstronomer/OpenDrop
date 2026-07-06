@@ -151,6 +151,16 @@ All `/api/admin/*` routes require the `X-Operator-Token` header and return **404
 when the token is unset or wrong — the surface is invisible without the secret. Public reporting
 needs no token.
 
+> **Operator console (web UI).** The fastest way to work the queues is the browser console at
+> **`https://<domain>/admin.html`** — a self-hosted, token-gated page (vanilla ESM, no build step;
+> same origin, so it rides the same nginx proxy + CSP). Paste the `OPERATOR_TOKEN` to sign in (kept
+> in `sessionStorage`, this tab only; sent solely as the `X-Operator-Token` header). Three tabs:
+> **Photo moves** (the held pin-move queue, §5.5 — evidence photo, a before/after mini-map, distance
+> + vote tally, Approve / Reject), **Reports** (§5.2–5.3 — resolve / take down / restore), and
+> **Revert tools** (§5.4 — audit lookup, per-entry / all / by-actor revert). It 404s for anyone
+> without the token, exactly like the API, and is not linked from the public map. Everything below is
+> the equivalent `curl` for scripting.
+
 ### 5.1 Public reporting (no auth)
 - `POST /api/locations/{id}/report` — files a complaint. **Never auto-hides a location.**
 - `POST /api/images/{id}/report` — once `REPORT_IMAGE_HIDE_THRESHOLD` (default 2) *distinct*
@@ -185,7 +195,24 @@ Every auto-applied field/pin correction writes a `moderation_audit` row.
   auto-applied change from one actor across all locations (mass-edit cleanup). Get the
   `actor_ip_hash` from the audit rows.
 
-### 5.5 The authoritative-source threshold gate (0010)
+### 5.5 Held photo-move review queue (migration 0013)
+A community photo can propose a corrected pin. A small nudge (≤ `PHOTO_AUTO_APPLY_MOVE_M`, default
+250 m from the immutable origin) auto-applies once it clears the score gate; a **larger** move
+(250 m – `CORRECTION_MAX_MOVE_M`, default 2 km) with ≥ `PHOTO_LARGE_MOVE_MIN_VOTERS` (default 4)
+distinct **independent** helpful upvoters is **held for a human** — the pin does **not** move
+(`apply_state='pending_review'`). Work the queue from the console's **Photo moves** tab, or by hand:
+- `GET  /api/admin/images/pending-moves` — the held queue. Each row carries `image_id`,
+  `location_id`, `location_name`, `photo_url`, `distance_m` (from the origin), `independent_voters`,
+  `score`, the `origin`/`current`/`suggested` coordinates, and `photo_removed`.
+- `POST /api/admin/images/{id}/apply-move` — commit the move: re-checks the 2 km cap, moves the pin,
+  and writes the same revertible `moderation_audit` row an auto-apply would (undo via §5.4). Returns
+  `applied`, or `409 too_far` / `409 not_pending`.
+- `POST /api/admin/images/{id}/reject-move` — drop it; the pin never moves (`apply_state='rejected'`).
+
+A `> 2 km` move is never applied or queued (hard ceiling, re-checked at apply time), and a photo that
+only vouches (proposes no move) never appears here. See [`../migrations/0013_photo_move_bands.sql`](../migrations/0013_photo_move_bands.sql).
+
+### 5.6 The authoritative-source threshold gate (0010)
 A lone good-faith edit to `name`, `org_name`, or `address` on an **authoritatively-sourced**
 location (any non-`crowd` source — e.g. a Salvation Army seed row) no longer auto-applies; it needs
 ≥1 confirmer even when engagement is Cold. `org_type`, pin moves, and crowd-only pins keep the

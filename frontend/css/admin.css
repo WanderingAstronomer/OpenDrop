@@ -1,0 +1,213 @@
+/* ============================================================================
+   OpenDrop — operator console. Loaded ONLY by admin.html, AFTER style.css, so it
+   reuses every design token (--surface, --ink, --accent, --border, --r-card, the
+   .btn system, .toast-host, focus rings) and only adds admin-specific layout.
+   ========================================================================== */
+
+/* The map app pins html/body to 100vh + overflow:hidden. The console is a normal scrolling
+   document; because this file is admin-only and later in the cascade, this override is safe. */
+html, body { height: auto; min-height: 100%; overflow: auto; }
+.admin-body {
+  margin: 0; background: var(--surface-2); color: var(--ink);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* ---- top bar --------------------------------------------------------------- */
+.admin-topbar {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 18px; background: var(--surface); border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.admin-brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.admin-brand-mark { font-weight: 800; letter-spacing: .2px; color: var(--brand); font-size: 18px; }
+.admin-brand-sub { color: var(--ink-3); font-size: 13px; white-space: nowrap; }
+.admin-topbar-actions { display: flex; align-items: center; gap: 8px; }
+/* Themed icon button (☾/☀) — style.css sizes .icon-btn variants for the map chrome, but the console
+   never loads that context, so give the toggle its own compact chip here. */
+.icon-btn.theme-toggle {
+  appearance: none; cursor: pointer; width: 38px; height: 38px; border-radius: var(--r-ctl);
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink); font-size: 17px;
+  line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+  transition: background .15s, border-color .15s;
+}
+.icon-btn.theme-toggle:hover { background: var(--surface-2); border-color: var(--border-2); }
+
+/* ---- sign-in gate ---------------------------------------------------------- */
+.auth-gate { display: flex; justify-content: center; padding: 8vh 20px 40px; }
+.auth-card {
+  width: min(440px, 100%); background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-card); box-shadow: var(--shadow); padding: 26px 24px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.auth-title { margin: 0; font-size: 22px; color: var(--brand); }
+.auth-lead { margin: 0 0 6px; color: var(--ink-2); font-size: 14px; }
+.auth-lead code, .auth-input {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.auth-lead code { background: var(--surface-3); padding: 1px 5px; border-radius: 5px; font-size: .92em; }
+.auth-label { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.auth-input {
+  width: 100%; padding: 11px 12px; font-size: 16px; /* 16px: no iOS focus-zoom */
+  border: 1px solid var(--border-2); border-radius: var(--r-input);
+  background: var(--surface-2); color: var(--ink);
+}
+.auth-input:focus-visible { outline: none; box-shadow: var(--focus); border-color: var(--accent); }
+.auth-submit { margin-top: 6px; }
+.auth-error {
+  margin: 4px 0 0; color: var(--low); font-size: 13.5px; font-weight: 600;
+  background: var(--low-soft); border-radius: var(--r-input); padding: 8px 10px;
+}
+.auth-foot { margin: 10px 0 0; font-size: 13px; }
+.auth-foot a { color: var(--accent); text-decoration: none; }
+.auth-foot a:hover { text-decoration: underline; }
+
+/* ---- dashboard shell ------------------------------------------------------- */
+.admin-dashboard { max-width: 960px; margin: 0 auto; padding: 18px 18px 80px; }
+.admin-tabs {
+  display: flex; gap: 6px; border-bottom: 1px solid var(--border); margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.tab {
+  appearance: none; cursor: pointer; background: none; border: 0; color: var(--ink-2);
+  padding: 10px 14px; font-size: 15px; font-weight: 600; border-radius: var(--r-input) var(--r-input) 0 0;
+  border-bottom: 3px solid transparent; margin-bottom: -1px; transition: color .15s, border-color .15s, background .15s;
+}
+.tab:hover { color: var(--ink); background: var(--surface); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab:focus-visible { outline: none; box-shadow: var(--focus); }
+
+.view-head { display: flex; align-items: center; gap: 12px; margin: 4px 0 6px; }
+.view-head h2 { margin: 0; font-size: 20px; color: var(--ink); }
+.view-count { font-size: 13px; }
+.view-refresh { margin-left: auto; }
+.view-lead { margin: 0 0 16px; font-size: 14px; max-width: 68ch; }
+.muted { color: var(--ink-3); }
+.loading-line { padding: 18px 2px; }
+
+.empty-state {
+  border: 1px dashed var(--border-2); border-radius: var(--r-card); background: var(--surface);
+  padding: 28px 20px; text-align: center; color: var(--ink-2);
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+
+/* ---- pending-move cards ---------------------------------------------------- */
+.moves-list { display: flex; flex-direction: column; gap: 16px; }
+.move-card {
+  display: grid; grid-template-columns: 168px 1fr; gap: 16px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card);
+  box-shadow: var(--shadow-sm); padding: 14px;
+}
+.move-photo {
+  display: block; align-self: start; border-radius: var(--r-input); overflow: hidden;
+  border: 1px solid var(--border); background: var(--surface-2);
+}
+.move-photo img { display: block; width: 100%; height: 168px; object-fit: cover; }
+.move-main { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.move-title { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.move-title a { color: var(--accent); text-decoration: none; font-weight: 700; font-size: 16px; }
+.move-title a:hover { text-decoration: underline; }
+.move-id { color: var(--ink-3); font-size: 12.5px; font-family: ui-monospace, Menlo, monospace; }
+
+.move-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.badge {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 600;
+  padding: 3px 9px; border-radius: var(--r-pill); background: var(--surface-3); color: var(--ink-2);
+  border: 1px solid var(--border);
+}
+.badge-dist { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.badge-warn { background: var(--low-soft); color: var(--low); border-color: transparent; }
+
+.move-map {
+  height: 220px; border-radius: var(--r-input); overflow: hidden; border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+/* Leaflet adds .leaflet-container to the .move-map element itself; the higher-specificity match
+   overrides Leaflet's own font so tooltips/attribution use the console's font, not Leaflet's 12px. */
+.move-map.leaflet-container { background: var(--surface-2); font: inherit; }
+
+.move-coords { font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
+.move-coords code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; color: var(--ink); }
+.coord-key {
+  display: inline-block; min-width: 84px; font-weight: 600; color: var(--ink-2);
+}
+.coord-key.proposed { color: var(--medium); }
+.move-meta { font-size: 12.5px; }
+.move-actions { display: flex; gap: 10px; margin-top: 2px; }
+.move-actions .btn { flex: 0 0 auto; }
+.move-actions .btn.primary { min-width: 140px; }
+
+/* ---- reports --------------------------------------------------------------- */
+.reports-list { display: flex; flex-direction: column; gap: 14px; }
+.report-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card);
+  box-shadow: var(--shadow-sm); padding: 14px; display: flex; flex-direction: column; gap: 8px;
+}
+.report-target { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.report-kind { font-weight: 700; }
+.report-target a { color: var(--accent); text-decoration: none; }
+.report-target a:hover { text-decoration: underline; }
+.report-ref { color: var(--ink-3); font-size: 12.5px; font-family: ui-monospace, Menlo, monospace; }
+.report-reason { margin: 0; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.report-meta { font-size: 12.5px; }
+.report-note {
+  width: 100%; padding: 8px 10px; font-size: 14px; border: 1px solid var(--border-2);
+  border-radius: var(--r-input); background: var(--surface-2); color: var(--ink);
+}
+.report-note:focus-visible { outline: none; box-shadow: var(--focus); border-color: var(--accent); }
+.report-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* status pills (location/image status + flags) */
+.pill {
+  display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 700; letter-spacing: .2px;
+  text-transform: uppercase; padding: 2px 8px; border-radius: var(--r-pill);
+  background: var(--surface-3); color: var(--ink-2);
+}
+.pill-active, .pill-visible { background: var(--high-soft); color: var(--cap-high); }
+.pill-pending { background: var(--accent-soft); color: var(--accent); }
+.pill-hidden, .pill-removed, .pill-reverted { background: var(--low-soft); color: var(--low); }
+
+/* ---- revert tools ---------------------------------------------------------- */
+.tool-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card);
+  box-shadow: var(--shadow-sm); padding: 16px; margin-bottom: 16px;
+}
+.tool-card h3 { margin: 0 0 4px; font-size: 16px; }
+.tool-card p { margin: 0 0 12px; font-size: 13.5px; }
+.tool-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tool-col { display: flex; flex-direction: column; gap: 8px; }
+.tool-input {
+  padding: 9px 11px; font-size: 15px; border: 1px solid var(--border-2); border-radius: var(--r-input);
+  background: var(--surface-2); color: var(--ink); max-width: 220px;
+}
+.tool-input.wide { max-width: 100%; width: 100%; font-family: ui-monospace, Menlo, monospace; font-size: 13.5px; }
+.tool-input:focus-visible { outline: none; box-shadow: var(--focus); border-color: var(--accent); }
+
+.audit-box { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.audit-summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  font-size: 13.5px; font-weight: 600; color: var(--ink-2); padding-bottom: 4px;
+}
+.audit-row {
+  border: 1px solid var(--border); border-radius: var(--r-input); background: var(--surface-2);
+  padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;
+}
+.audit-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+.audit-kind { font-weight: 700; }
+.audit-when { margin-left: auto; }
+.audit-change code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; overflow-wrap: anywhere; }
+.audit-note { font-size: 12.5px; }
+.btn.btn-sm { padding: 5px 10px; font-size: 12.5px; border-radius: 8px; align-self: flex-start; }
+
+/* ---- narrow screens -------------------------------------------------------- */
+@media (max-width: 620px) {
+  .move-card { grid-template-columns: 1fr; }
+  .move-photo img { height: 200px; }
+  .move-actions { flex-direction: column; }
+  .move-actions .btn { width: 100%; }
+  .admin-dashboard { padding: 14px 12px 72px; }
+}
+@media (pointer: coarse) {
+  .tab { min-height: 44px; }
+}

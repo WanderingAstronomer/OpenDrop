@@ -124,6 +124,29 @@ def test_photo_move_within_cap_applies_and_is_revertible(conn, client, op):
 
 
 @requires_db
+def test_pending_moves_queue_exposes_render_fields(conn, client, op):
+    """The operator queue returns everything the admin UI needs to render a review card in one
+    round-trip: the evidence photo_url, the location_name, and the origin/current/suggested
+    coordinates the before/after map draws — alongside distance_m and the independent-voter count."""
+    loc = _mk_location(conn, "queue payload", lat=40.00, lon=-83.00)
+    img = _mk_correction_image(conn, loc, slat=40.01, slon=-83.01)  # ~1.4 km from origin -> Band B
+    for i in range(4):
+        client.post(f"/api/images/{img}/vote", json={"vote": "helpful", "turnstile_token": TOK},
+                    headers={"X-Real-IP": f"10.36.0.{i}"})
+    q = client.get("/api/admin/images/pending-moves", headers=op).json()["pending_moves"]
+    row = next(m for m in q if m["image_id"] == img)
+    assert row["location_id"] == loc
+    assert row["location_name"] == "queue payload"
+    assert row["photo_url"].startswith("/media/") and row["photo_url"].endswith(".jpg")
+    assert row["photo_removed"] is False
+    assert row["independent_voters"] >= 4
+    assert 1300 < row["distance_m"] < 1500                                  # ~1.4 km move
+    assert round(row["origin_lat"], 2) == 40.00 and round(row["origin_lon"], 2) == -83.00
+    assert round(row["current_lat"], 2) == 40.00 and round(row["current_lon"], 2) == -83.00  # not moved
+    assert round(row["suggested_lat"], 2) == 40.01 and round(row["suggested_lon"], 2) == -83.01
+
+
+@requires_db
 def test_photo_small_move_auto_applies_band_a(conn, client, op):
     """BAND A: a small move (<=250 m from origin) that clears the score gate auto-applies
     immediately (as 0012), sets apply_state='approved', and writes a revertible audit row."""

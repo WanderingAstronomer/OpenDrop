@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Operator console — OpenDrop</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="description" content="OpenDrop operator console — review held photo pin-moves, triage reports, revert corrections." />
+  <!-- Resolve theme before first paint (same 'self' script the legal pages use; CSP allows it). -->
+  <script src="/js/theme-boot.js"></script>
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+</head>
+<body class="admin-body">
+  <header class="admin-topbar">
+    <div class="admin-brand">
+      <span class="admin-brand-mark">OpenDrop</span>
+      <span class="admin-brand-sub">Operator console</span>
+    </div>
+    <div class="admin-topbar-actions">
+      <button id="theme-toggle" class="icon-btn theme-toggle" type="button" aria-label="Switch theme" title="Switch theme">☾</button>
+      <button id="signout" class="btn ghost" type="button" hidden>Sign out</button>
+    </div>
+  </header>
+
+  <!-- Sign-in gate. The operator endpoints 404 without a valid OPERATOR_TOKEN, so this is the only
+       way in; the token is held in sessionStorage and sent as the X-Operator-Token header. -->
+  <section id="auth-gate" class="auth-gate" aria-label="Operator sign in">
+    <form id="auth-form" class="auth-card" autocomplete="off">
+      <h1 class="auth-title">Operator sign in</h1>
+      <p class="auth-lead">Enter the <code>OPERATOR_TOKEN</code> to review the moderation queue. It stays on this device (this tab only) and is sent only as a request header.</p>
+      <label class="auth-label" for="auth-token">Operator token</label>
+      <input id="auth-token" class="auth-input" type="password" autocomplete="off" spellcheck="false"
+             autocapitalize="off" placeholder="OPERATOR_TOKEN" aria-describedby="auth-error" />
+      <button id="auth-submit" class="btn primary auth-submit" type="submit">Sign in</button>
+      <p id="auth-error" class="auth-error" role="alert" hidden></p>
+      <p class="auth-foot"><a href="/">← Back to the map</a></p>
+    </form>
+  </section>
+
+  <!-- Dashboard (revealed after sign-in). -->
+  <main id="dashboard" class="admin-dashboard" hidden>
+    <nav class="admin-tabs" role="tablist" aria-label="Operator sections">
+      <button class="tab active" type="button" data-view="moves" role="tab" aria-selected="true" aria-controls="content">Photo moves</button>
+      <button class="tab" type="button" data-view="reports" role="tab" aria-selected="false" aria-controls="content">Reports</button>
+      <button class="tab" type="button" data-view="tools" role="tab" aria-selected="false" aria-controls="content">Revert tools</button>
+    </nav>
+    <div id="content" class="admin-content" role="tabpanel"></div>
+  </main>
+
+  <div id="toast-host" class="toast-host" role="status" aria-live="polite"></div>
+
+  <script src="/vendor/leaflet/leaflet.js"></script>
+  <script type="module" src="/js/admin/main.js"></script>
+</body>
+</html>

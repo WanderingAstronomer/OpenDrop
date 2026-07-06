@@ -380,14 +380,26 @@ async def list_pending_image_moves(limit: int = 200):
     """Photo pin-moves held for operator review (Band B: >250 m and <=2 km from origin, with enough
     independent support). The pin has NOT been moved — apply-move commits it, reject-move drops it.
     Distance is the actual move (metres from the immutable origin); independent_voters excludes the
-    photo's own submitter. WHERE apply_state='pending_review' matches the partial-index predicate."""
+    photo's own submitter. WHERE apply_state='pending_review' matches the partial-index predicate.
+
+    The row carries everything the operator UI needs to render a review card in one round-trip: the
+    evidence photo_url, the location_name, and the three coordinate pairs the before/after map draws —
+    origin (the immutable anchor the distance/cap measure from), current (where the pin sits now, what
+    the public sees), and the proposed suggested point. photo_removed flags a photo that was community-
+    or operator-hidden after it queued, so the operator can weigh evidence that is no longer visible."""
     limit = max(1, min(limit, 1000))
     async with db.pool.connection() as conn:
         cur = await conn.execute(
-            """SELECT i.id AS image_id, i.location_id, i.score,
+            """SELECT i.id AS image_id, i.location_id, l.name AS location_name, i.score,
+                      '/media/' || i.path AS photo_url,
+                      (i.removed_at IS NOT NULL) AS photo_removed,
                       ST_Distance(COALESCE(l.origin_geom, l.geom)::geography,
                                   ST_SetSRID(ST_MakePoint(i.suggested_lon, i.suggested_lat), 4326)::geography)
                         AS distance_m,
+                      ST_Y(COALESCE(l.origin_geom, l.geom)) AS origin_lat,
+                      ST_X(COALESCE(l.origin_geom, l.geom)) AS origin_lon,
+                      ST_Y(l.geom) AS current_lat, ST_X(l.geom) AS current_lon,
+                      i.suggested_lat, i.suggested_lon,
                       (SELECT count(DISTINCT iv.ip_hash)
                          FILTER (WHERE iv.helpful AND iv.ip_hash <> i.submitter_ip_hash)
                        FROM image_votes iv WHERE iv.image_id = i.id) AS independent_voters,

@@ -70,7 +70,7 @@ bash scripts/seed_national.sh
 |---|---|
 | [`backend/`](backend/) | FastAPI app — REST API, Turnstile verification, IP-cooldown voting, confidence recompute |
 | [`pipeline/`](pipeline/) | OSM ingest (tiled for large regions), dedup, scrapers (`salvation_army`, `planet_aid`, `usagain`, `wearable_collections` ingest; `goodwill` enrich-only), data-driven regions (+ vendored `data/us_zips.csv`), `seed` (one region), `seed_national` (gentle resumable all-states), promote |
-| [`frontend/`](frontend/) | Vanilla-JS Leaflet single-page map (markers, clustering, popovers, submit, photo gallery, list view) |
+| [`frontend/`](frontend/) | Vanilla-JS Leaflet single-page map (markers, clustering, popovers, submit, photo gallery, list view). Also `admin.html` — a token-gated operator console for the moderation queues (see [`docs/RUNBOOK.md`](docs/RUNBOOK.md) §5) |
 | [`migrations/`](migrations/) | PostGIS schema as an ordered, append-only migration chain — `0001_init` (base schema), `0002` (confidence source-component fix), `0003` (consignment org_type), `0004` (community photos + image votes), `0005` (image-vote Turnstile), `0006` (pin corrections, community signals, engagement-tiered trust + consensus functions), `0007` (correction origin-anchor + retirement strict-dominance + per-attribute value bounds), `0008` (seed_progress — the resumable national-seed checkpoint table). Applied in order on first boot; shipped migrations are fixed forward with a new migration, never edited. |
 | [`planning/`](planning/) | Architecture, data model, build sequence, validation |
 
