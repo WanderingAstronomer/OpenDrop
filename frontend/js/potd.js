@@ -114,9 +114,16 @@ export async function maybeShowWelcomeHero() {
   if (!potd) return;
 
   const opener = document.activeElement;  // hand focus back here on close
+
+  // A centered greeting on a light scrim — dismissible every way (✕ / Got it / Escape / scrim click),
+  // shown exactly once. Still not a hard modal: closing it leaves the live map behind.
+  const overlay = document.createElement("div");
+  overlay.className = "welcome-overlay";
+
   const card = document.createElement("section");
   card.className = "welcome-hero";
   card.setAttribute("role", "dialog");
+  card.setAttribute("aria-modal", "false");
   card.setAttribute("aria-label", "Welcome to OpenDrop");
 
   // Close button (also the initial focus target).
@@ -127,7 +134,7 @@ export async function maybeShowWelcomeHero() {
   close.textContent = "✕";  // ✕
   card.appendChild(close);
 
-  const img = potd.thumb_url || potd.image_url;
+  const img = potd.image_url || potd.thumb_url;  // full-res for the full-aspect display
   if (img) {
     const media = document.createElement("a");
     media.href = potd.source_url || img;
@@ -157,25 +164,38 @@ export async function maybeShowWelcomeHero() {
   body.appendChild(blurb);
   body.appendChild(buildCredit(potd));
 
+  // Maker byline.
+  const author = document.createElement("p");
+  author.className = "welcome-author";
+  author.appendChild(document.createTextNode("Built by "));
+  const who = document.createElement("a");
+  who.href = "https://wanderingastronomer.github.io";
+  who.target = "_blank";
+  who.rel = "noopener";
+  who.textContent = "Andrew Brown";
+  author.appendChild(who);
+  body.appendChild(author);
+
   const gotit = document.createElement("button");
   gotit.type = "button";
   gotit.className = "btn primary welcome-ok";
   gotit.textContent = "Got it";
   body.appendChild(gotit);
   card.appendChild(body);
+  overlay.appendChild(card);
 
   let onKey = null;
   const dismiss = () => {
     try { localStorage.setItem(WELCOME_KEY, "1"); } catch (e) { /* storage blocked — still close */ }
     if (onKey) { document.removeEventListener("keydown", onKey); onKey = null; }
-    card.remove();
+    overlay.remove();
     try { if (opener && opener.focus) opener.focus({ preventScroll: true }); } catch (e) { /* gone */ }
   };
   close.onclick = dismiss;
   gotit.onclick = dismiss;
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) dismiss(); });  // scrim click
 
-  // Escape closes; Tab is trapped inside the card (it IS a dialog, but non-modal — the map stays
-  // live behind it, so we only cycle focus, we don't block the page). Mirrors photos.js/submit.js.
+  // Escape closes; Tab is trapped inside the card so focus doesn't wander to the map behind it.
   onKey = (e) => {
     if (e.key === "Escape") { e.preventDefault(); dismiss(); return; }
     if (e.key !== "Tab") return;
@@ -190,6 +210,6 @@ export async function maybeShowWelcomeHero() {
   };
   document.addEventListener("keydown", onKey);
 
-  document.body.appendChild(card);
+  document.body.appendChild(overlay);
   try { close.focus({ preventScroll: true }); } catch (e) { /* not focusable yet */ }
 }

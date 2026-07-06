@@ -758,8 +758,7 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
   .util-cluster:not(.in-bar) .bar-btn { width: 48px; height: 48px; border-radius: 14px; box-shadow: var(--shadow-sm); }
   /* attribution pill sits just above the resting sheet */
   .leaflet-bottom.leaflet-left { bottom: calc(max(92px, 13dvh) + 8px); }
-  /* welcome hero clears the sheet too */
-  .welcome-hero { left: 12px; right: 12px; width: auto; bottom: calc(env(safe-area-inset-bottom) + max(92px, 13dvh) + 12px); }
+  /* welcome greeting is a centered overlay at all sizes now — nothing sheet-specific to do */
 }
 
 /* ===== T26: overlay-panel chrome behavior ===== */
@@ -919,14 +918,19 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
 }
 
 /* ============================ WELCOME HERO ============================= */
-/* First-visit intro card. Bounded + non-modal (the map stays live behind it); anchored bottom-left
-   on desktop, and a bottom sheet on mobile that never covers the whole screen. */
+/* First-visit greeting: a CENTERED card on a light scrim, dismissible every way (✕ / Got it /
+   Escape / scrim click), shown once. Full-aspect POTD image (not cropped); centered copy. */
+.welcome-overlay {
+  position: fixed; inset: 0; z-index: 1600; display: flex; align-items: center; justify-content: center;
+  padding: 20px; background: rgba(8, 12, 18, 0.5);
+  backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+  animation: welcome-fade 0.2s ease-out;
+}
 .welcome-hero {
-  position: absolute; left: 16px; bottom: 16px; z-index: 1500;
-  width: min(360px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
-  background: var(--surface); color: var(--ink);
+  position: relative; width: min(400px, 100%); max-height: calc(100dvh - 40px); overflow: auto;
+  background: var(--surface); color: var(--ink); text-align: center;
   border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow);
-  animation: welcome-in 0.2s ease-out;
+  animation: welcome-in 0.22s cubic-bezier(.2, .7, .3, 1);
 }
 .welcome-x {
   position: absolute; top: 8px; right: 8px; z-index: 1;
@@ -936,17 +940,22 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
 }
 .welcome-x:hover { background: rgba(0, 0, 0, 0.65); }
 .welcome-x:focus-visible { box-shadow: var(--focus); outline: none; }
-.welcome-media { display: block; }
+/* Full aspect ratio: letterboxed within a height cap, centered — never cropped to a banner. */
+.welcome-media { display: block; padding: 16px 16px 0; }
 .welcome-media img {
-  width: 100%; height: 150px; object-fit: cover; display: block;
-  border-radius: var(--r-card) var(--r-card) 0 0;
+  display: block; max-width: 100%; max-height: 46vh; width: auto; height: auto; margin: 0 auto;
+  border-radius: var(--r-input); background: var(--surface-2);
 }
-.welcome-body { padding: 14px 16px 16px; }
-.welcome-title { margin: 0 0 6px; font-size: var(--fs-h3); color: var(--brand); }
-.welcome-blurb { margin: 0 0 10px; font-size: var(--fs-small); line-height: 1.55; color: var(--ink); }
-.welcome-body .potd-credit { margin: 0 0 12px; }
+.welcome-body { padding: 14px 20px 20px; }
+.welcome-title { margin: 0 0 8px; font-size: 22px; font-weight: 700; color: var(--brand); text-align: center; }
+.welcome-blurb { margin: 0 auto 12px; font-size: var(--fs-small); line-height: 1.55; color: var(--ink); max-width: 40ch; text-align: center; }
+.welcome-body .potd-credit { margin: 0 0 10px; }
+.welcome-author { margin: 0 0 14px; font-size: var(--fs-small); color: var(--ink-2); }
+.welcome-author a { color: var(--accent); font-weight: 600; text-decoration: none; }
+.welcome-author a:hover { text-decoration: underline; }
 .welcome-ok { width: 100%; }
-@keyframes welcome-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes welcome-in { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes welcome-fade { from { opacity: 0; } to { opacity: 1; } }
 
 /* ---- report (location + photo) ---- */
 .btn.danger { color: var(--low); border-color: var(--low-soft); }
@@ -1074,7 +1083,7 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
   .locate-btn, .locate-btn:hover { transform: none; }
   .locate-btn.busy svg { animation: odc-pulse 1s ease-in-out infinite; }
   .odc-pending { animation: none; stroke: #a855f7 !important; stroke-width: 2 !important; filter: drop-shadow(0 0 3px rgba(168, 85, 247, 0.9)); }
-  .welcome-hero { animation: none; }
+  .welcome-hero, .welcome-overlay { animation: none; }
   html { scroll-behavior: auto; }
 }
 
