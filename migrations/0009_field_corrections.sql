@@ -1,5 +1,5 @@
 -- OpenDrop — crowd field corrections (migration 0009)
--- Source of truth: planning/DATA_MODEL.md (engagement-tiered trust model).
+-- Source of truth: docs/DATA_MODEL.md (engagement-tiered trust model).
 --
 -- WHY THIS EXISTS
 -- Until now the only editable property of a seeded location was its PIN (0006 pin corrections).

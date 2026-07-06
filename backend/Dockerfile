@@ -10,8 +10,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Two importable top-level packages from WORKDIR: app (API) and pipeline (jobs)
 COPY backend/app ./app
 COPY pipeline ./pipeline
-# Committed Phase-1 fixture used as the deterministic OSM fallback in pipeline.seed
-COPY research/data/osm_columbus.json ./research/data/osm_columbus.json
 
 # Run as a non-root user (defense-in-depth for a public-facing container).
 # Pre-create the media dir owned by appuser so the named volume inherits write perms.

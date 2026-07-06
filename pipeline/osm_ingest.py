@@ -17,7 +17,7 @@ from .scrapers.http import PoliteClient
 
 log = logging.getLogger("opendrop.osm")
 
-FIXTURE = Path(__file__).resolve().parents[1] / "research" / "data" / "osm_columbus.json"
+FIXTURE = Path(__file__).resolve().parent / "data" / "osm_columbus.json"
 DEFAULT_BBOX = os.environ.get("SEED_REGION_BBOX", "39.80,-83.25,40.18,-82.75")  # s,w,n,e
 _FIXTURE_CENTER = (39.96, -82.99)  # Columbus — the fixture's metro
 

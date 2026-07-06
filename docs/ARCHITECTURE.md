@@ -1,6 +1,6 @@
 # OpenDrop — Architecture
 
-> Complete build specification. Phase 3 executes this without further planning. Grounded in [research/FINDINGS.md](../research/FINDINGS.md); schema details live in [DATA_MODEL.md](DATA_MODEL.md); task order in [BUILD_SEQUENCE.md](BUILD_SEQUENCE.md).
+> Complete build specification, grounded in [FINDINGS.md](FINDINGS.md); schema details live in [DATA_MODEL.md](DATA_MODEL.md).
 
 ---
 

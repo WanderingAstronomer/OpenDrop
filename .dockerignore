@@ -18,17 +18,10 @@ pgdata/
 node_modules/
 *.log
 
-# Docs / planning / tests not needed at runtime
+# Docs / tests not needed at runtime
 *.md
-planning/
 tests/
 backend/tests/
 
 # The api image doesn't serve the frontend (nginx does, via a volume mount)
 frontend/
-
-# research/: ship ONLY the fixture the Dockerfile copies
-research/*
-!research/data
-research/data/*
-!research/data/osm_columbus.json

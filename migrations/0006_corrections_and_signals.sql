@@ -1,5 +1,5 @@
 -- OpenDrop — photo-optional pin corrections + community signals (migration 0006)
--- Source of truth: planning/DATA_MODEL.md (engagement-tiered trust model).
+-- Source of truth: docs/DATA_MODEL.md (engagement-tiered trust model).
 --
 -- WHY THIS EXISTS
 -- Until now the only way to fix a pin was to upload a PHOTO and have it earn helpful votes

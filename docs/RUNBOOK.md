@@ -1,7 +1,7 @@
 # OpenDrop Operations Runbook
 
 The single source of truth for running OpenDrop in production: deploying changes, recovering from
-failure, moderating content, and responding to incidents. Pair it with `planning/ARCHITECTURE.md`
+failure, moderating content, and responding to incidents. Pair it with `docs/ARCHITECTURE.md`
 (how the system is built) and `.env.example` (every tunable).
 
 ---

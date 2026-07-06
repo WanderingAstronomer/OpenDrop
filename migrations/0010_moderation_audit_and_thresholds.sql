@@ -1,5 +1,5 @@
 -- OpenDrop — moderation, audit/revert ledger, public reports, anti-abuse thresholds (migration 0010)
--- Source of truth: planning/DATA_MODEL.md (engagement-tiered trust model) + planning/RUNBOOK.md.
+-- Source of truth: docs/DATA_MODEL.md (engagement-tiered trust model) + docs/RUNBOOK.md.
 --
 -- WHY THIS EXISTS
 -- Production hardening. The crowd correction system (0006/0009) auto-applies edits with NO record

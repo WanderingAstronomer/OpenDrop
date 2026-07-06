@@ -1,5 +1,5 @@
 -- OpenDrop — initial schema (migration 0001)
--- Source of truth: planning/DATA_MODEL.md (Phase 2, post-review).
+-- Source of truth: docs/DATA_MODEL.md (Phase 2, post-review).
 -- Target: PostgreSQL 17 + PostGIS 3.5 (no 3.6-only feature used).
 -- Applied ONCE: plain CREATEs (CREATE TYPE has no IF NOT EXISTS). The ledger in
 -- scripts/migrate.sh guards re-application; the docker initdb mount runs this on first boot.

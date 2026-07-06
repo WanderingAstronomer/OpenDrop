@@ -1,5 +1,5 @@
 -- OpenDrop — correction anchor, strict retire dominance, tighter attribute bounds (migration 0007)
--- Source of truth: planning/DATA_MODEL.md (engagement-tiered trust model).
+-- Source of truth: docs/DATA_MODEL.md (engagement-tiered trust model).
 --
 -- Follow-up to 0006. Four targeted fixes surfaced by an adversarial review of the trust model.
 -- All are append-only redefinitions / additive schema — nothing in 0006 is edited in place

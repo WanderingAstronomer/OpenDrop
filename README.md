@@ -5,7 +5,7 @@
 OpenDrop seeds a map from **redistributable** first-party sources (OpenStreetMap, The Salvation Army, Planet Aid, USAgain, and Wearable Collections), deduplicates them with a validated geo + fuzzy-name algorithm, and keeps the data fresh via **crowd validation** — confirm/deny votes, community photos, and photo-validated pin corrections — plus scheduled re-sync with closure detection. Every write path (votes, submissions, photo uploads, photo votes) is gated by Cloudflare Turnstile and per-IP cooldowns — no user accounts.
 
 - **Stack:** PostgreSQL 17 + PostGIS · Python 3.12 / FastAPI · vanilla-JS Leaflet · Docker Compose.
-- **How it was built:** Phase 1 research ([`research/FINDINGS.md`](research/FINDINGS.md)) → Phase 2 architecture ([`planning/`](planning/)) → Phase 3 construction → Phase 4 validation. The directive is [`AGENTS.md`](AGENTS.md).
+- **Docs:** [architecture](docs/ARCHITECTURE.md) · [data model](docs/DATA_MODEL.md) · [data sources & findings](docs/FINDINGS.md) · [operations runbook](docs/RUNBOOK.md).
 
 ## Run it (setup → running map, 7 steps)
 
@@ -72,7 +72,7 @@ bash scripts/seed_national.sh
 | [`pipeline/`](pipeline/) | OSM ingest (tiled for large regions), dedup, scrapers (`salvation_army`, `planet_aid`, `usagain`, `wearable_collections` ingest; `goodwill` enrich-only), data-driven regions (+ vendored `data/us_zips.csv`), `seed` (one region), `seed_national` (gentle resumable all-states), promote |
 | [`frontend/`](frontend/) | Vanilla-JS Leaflet single-page map (markers, clustering, popovers, submit, photo gallery, list view). Also `admin.html` — a token-gated operator console for the moderation queues (see [`docs/RUNBOOK.md`](docs/RUNBOOK.md) §5) |
 | [`migrations/`](migrations/) | PostGIS schema as an ordered, append-only migration chain — `0001_init` (base schema), `0002` (confidence source-component fix), `0003` (consignment org_type), `0004` (community photos + image votes), `0005` (image-vote Turnstile), `0006` (pin corrections, community signals, engagement-tiered trust + consensus functions), `0007` (correction origin-anchor + retirement strict-dominance + per-attribute value bounds), `0008` (seed_progress — the resumable national-seed checkpoint table). Applied in order on first boot; shipped migrations are fixed forward with a new migration, never edited. |
-| [`planning/`](planning/) | Architecture, data model, build sequence, validation |
+| [`docs/`](docs/) | Architecture, data model, data-source findings, and the operations runbook |
 
 ## API (served at `/api`)
 
@@ -124,7 +124,7 @@ CI runs the same `ruff` lint + full `pytest` on every push and PR — see [`.git
 - **OpenStreetMap** data is **ODbL** — attributed on the map and embedded in `/api/export`.
 - **The Salvation Army** (satruck.org) first-party locations are stored with attribution.
 - **Planet Aid**, **USAgain**, and **Wearable Collections** drop-bin locations are first-party sources, stored with attribution.
-- **Goodwill** is **enrich-only**: its ToS forbids storing/redistributing its data, so the scraper runs as a pattern demo and persists **nothing** (see [decision D1](research/FINDINGS.md)).
+- **Goodwill** is **enrich-only**: its ToS forbids storing/redistributing its data, so the scraper runs as a pattern demo and persists **nothing** (see [decision D1](docs/FINDINGS.md)).
 - **Google Places / Foursquare** are never stored — query-time enrichment only.
 - No accounts; abuse is gated by Turnstile + per-IP cooldowns (good-enough, not adversarially hardened).
 
