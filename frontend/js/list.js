@@ -1,6 +1,7 @@
 import { ORG_TYPE_LABELS } from "./config.js";
 import { bucketCssColor, esc } from "./confidence.js";
 import { openPlacePanel } from "./panel.js";
+import { makeSheet } from "./sheet.js";
 import { prefersReducedMotion } from "./viewport.js";
 
 // Category filters map to org_type sets (also makes "places to resell" discoverable).
@@ -14,6 +15,7 @@ const FILTERS = {
 let map = null;
 let onFilterChange = null;
 let current = "all";
+let sheetApi = null; // mobile bottom-sheet controller — module-level so updateList can nudge it
 
 export function getTypes() {
   return FILTERS[current].types;
@@ -22,11 +24,12 @@ export function getTypes() {
 export function initList(m, onChange) {
   map = m;
   onFilterChange = onChange;
-  const toggle = document.getElementById("list-toggle");
   const panel = document.getElementById("list-panel");
   const filterSel = document.getElementById("list-filter");
   const closeBtn = document.getElementById("list-close");
   const listTab = document.getElementById("list-tab");
+  const grab = panel.querySelector(".list-grab");
+  const results = document.getElementById("list-results");
 
   filterSel.innerHTML = Object.entries(FILTERS)
     .map(([k, v]) => `<option value="${k}">${v.label}</option>`)
@@ -37,10 +40,13 @@ export function initList(m, onChange) {
     onFilterChange && onFilterChange();
   });
 
-  // Desktop-only collapse behind an edge tab — mirrors the detail panel (panel.js setCollapsed).
-  // Left-docked, so the chevron points LEFT (‹) to push the list off the left edge; the .is-collapsed
-  // class rotates that single glyph 180° (→ ›) in sync with the slide. The list stays "open" (filter
-  // retained) while collapsed; the List button / ✕ fully close it.
+  // The list is ALWAYS present in the redesign — a left rail on desktop (collapsible behind the
+  // edge tab), the resting bottom sheet on mobile. The old open/close toggle button is gone.
+  panel.classList.add("open");
+  panel.setAttribute("aria-hidden", "false");
+
+  // Desktop collapse behind the edge tab (chevron ‹ pushes the rail off the left edge; the
+  // .is-collapsed class rotates the glyph in sync with the slide).
   const setCollapsed = (collapsed) => {
     panel.classList.toggle("collapsed", collapsed);
     if (!listTab.querySelector(".list-chev")) listTab.innerHTML = '<span class="list-chev">‹</span>';
@@ -50,20 +56,34 @@ export function initList(m, onChange) {
     listTab.setAttribute("aria-label", label);
     listTab.title = label;
   };
-
-  const setOpen = (open) => {
-    panel.classList.toggle("open", open);
-    if (!open) panel.classList.remove("collapsed");
-    panel.setAttribute("aria-hidden", open ? "false" : "true");
-    toggle.setAttribute("aria-expanded", open ? "true" : "false");
-    listTab.hidden = !open;
-    if (open) { setCollapsed(false); filterSel.focus(); }
-    else toggle.focus();
-  };
-  toggle.addEventListener("click", () => setOpen(!panel.classList.contains("open")));
-  closeBtn.addEventListener("click", () => setOpen(false));
   listTab.addEventListener("click", () => setCollapsed(!panel.classList.contains("collapsed")));
-  panel.addEventListener("keydown", (e) => { if (e.key === "Escape") setOpen(false); });
+  // The header button is the in-rail collapse affordance (design: ‹ in the rail header).
+  closeBtn.innerHTML = "‹";
+  closeBtn.setAttribute("aria-label", "Collapse list");
+  closeBtn.title = "Collapse list";
+  closeBtn.addEventListener("click", () => setCollapsed(true));
+  panel.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && window.matchMedia("(min-width: 1024px)").matches) setCollapsed(true);
+  });
+
+  // Mobile: the shared 3-snap sheet, resting at peek. Only the grab handle drags (the header
+  // holds the filter <select> — dragging from it would fight the control).
+  sheetApi = makeSheet(panel, [grab], { content: results });
+  const seat = (desktop) => {
+    listTab.hidden = !desktop;
+    grab.hidden = desktop;
+    closeBtn.hidden = !desktop;
+    if (desktop) { sheetApi.disable(); }
+    else { setCollapsed(false); sheetApi.enable(); }
+  };
+  const mq = window.matchMedia("(min-width: 1024px)");
+  seat(mq.matches);
+  mq.addEventListener?.("change", (e) => seat(e.matches));
+  // Tap the grabber to toggle half/peek (guarded against the click a drag release fires).
+  grab.addEventListener("click", () => {
+    if (panel.dataset.justDragged) return;
+    sheetApi.setSnap(sheetApi.snap() === "peek" ? "half" : "peek");
+  });
 }
 
 export function updateList(data) {
@@ -99,7 +119,8 @@ export function updateList(data) {
     ul.innerHTML = `<li class="list-empty">No locations in this area yet.<br>
       <button class="btn quiet list-add" type="button">Add one you know about</button></li>`;
     ul.querySelector(".list-add").onclick = () => {
-      document.getElementById("list-close").click();
+      // Drop the mobile sheet to peek so the Add flow isn't buried under it.
+      if (sheetApi && !window.matchMedia("(min-width: 1024px)").matches) sheetApi.setSnap("peek");
       document.getElementById("add-btn").click();
     };
     return;
@@ -116,10 +137,8 @@ export function updateList(data) {
       `<span class="li-name">${esc(p.name)}</span>` +
       `<span class="li-type">${esc(ORG_TYPE_LABELS[p.org_type] || p.org_type)}</span>`;
     btn.addEventListener("click", () => {
-      // On phones the sheet and the drawer would stack — close the drawer first.
-      if (window.matchMedia("(max-width: 767px)").matches) {
-        document.getElementById("list-close").click();
-      }
+      // Mobile "mode swap": opening a place hides this list sheet via CSS (one sheet at a time);
+      // closing the place brings it back at the same snap — nothing to do here.
       const targetZoom = Math.max(map.getZoom(), 15);
       const ll = L.latLng(lat, lon);
       if (map.getZoom() < targetZoom) {

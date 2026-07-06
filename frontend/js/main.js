@@ -1,4 +1,5 @@
 import { fetchLocations } from "./api.js";
+import { initChrome } from "./chrome.js";
 import { loadMeta } from "./config.js";
 import { getTypes, initList, updateList } from "./list.js";
 import { initLocateButton } from "./locate.js";
@@ -153,6 +154,7 @@ async function boot() {
   initList(map, forceRefresh);
   initSubmitPanel();
   initLocateButton(map);
+  initChrome(); // top-bar action cluster: layers/legend popovers + mobile FAB relocation
   map.on("moveend", debouncedRefresh);
   map.on("resize", debouncedRefresh);
 

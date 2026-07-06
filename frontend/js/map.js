@@ -3,6 +3,10 @@ import { DEFAULT_VIEW, MIN_ZOOM } from "./config.js";
 const OSM_ATTR =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
+// Filled by initMap(); read by js/chrome.js to build the layers popover.
+let _basemaps = null;
+export function basemaps() { return _basemaps; }
+
 // Keep the camera over US data: the app is US-only, so panning to other continents (or onto
 // repeated world copies) only produces empty views and confusing wrap artifacts. noWrap stops
 // duplicate world copies of tiles; maxBounds + full viscosity keeps drags inside a padded
@@ -51,6 +55,10 @@ export function initMap() {
     maxBoundsViscosity: 1.0,
   }).setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
 
+  // Attribution lives bottom-LEFT per the responsive redesign (the bottom-right corner belongs to
+  // the zoom/locate/Add control stack; separate corners = no collision at any width).
+  map.attributionControl.setPosition("bottomleft");
+
   // Zoom controls in the bottom-right chrome, above the locate button (short travel to the rest
   // of the navigation), instead of stranded alone in the top-left.
   const zin = document.getElementById("zoom-in");
@@ -73,40 +81,27 @@ export function initMap() {
   map.whenReady(fitMinZoom);
   map.on("resize", fitMinZoom);
 
-  // Collapse the basemap card into its icon on phones — expanded, it overlaps the top-center search
-  // bar (which un-zooms to full width below 900px). Desktop keeps it open; re-sync on breakpoint
-  // crossings so a narrowed window collapses and a widened one re-opens.
-  const wideMq = window.matchMedia("(min-width: 768px)");
-  const layersCtl = L.control.layers(bases, {}, { position: "topright", collapsed: !wideMq.matches }).addTo(map);
-  wideMq.addEventListener?.("change", (e) => { if (e.matches) layersCtl.expand(); else layersCtl.collapse(); });
-  // Title the basemap card and tag it for styling (segmented-control look lives in style.css).
-  const layersEl = layersCtl.getContainer();
-  layersEl.classList.add("odc-basemaps");
-  const listEl = layersEl.querySelector(".leaflet-control-layers-base");
-  if (listEl) {
-    const h = L.DomUtil.create("div", "odc-basemaps-t", listEl);
-    h.textContent = "Map";
-    listEl.insertBefore(h, listEl.firstChild);
-  }
-
-  // Stronger card contrast over dark imagery (Satellite AND Hybrid)
+  // Basemap registry — the redesign replaces Leaflet's in-map layers card with a top-bar popover
+  // (js/chrome.js), so the swap logic lives here and the popover just calls set(). Persistence and
+  // the satellite-contrast class ride the same path the old control's baselayerchange handler took.
   function applySatClass(name) {
     map.getContainer().classList.toggle("satellite-active", name === "Satellite" || name === "Hybrid");
   }
   applySatClass(initialName);
-  map.on("baselayerchange", (e) => {
-    try { localStorage.setItem("opendrop_basemap", e.name); } catch (err) { /* ignore */ }
-    applySatClass(e.name);
-  });
+  let currentBase = initialName;
+  _basemaps = {
+    names: () => Object.keys(bases),
+    current: () => currentBase,
+    set(name) {
+      if (!bases[name] || name === currentBase) return;
+      map.removeLayer(bases[currentBase]);
+      map.addLayer(bases[name]);
+      currentBase = name;
+      try { localStorage.setItem("opendrop_basemap", name); } catch (err) { /* private mode */ }
+      applySatClass(name);
+    },
+  };
 
-  // Track the live height of the Leaflet attribution strip so the bottom-left/right control stacks
-  // can sit a constant small gap above it. It is ~26px on one line but wraps to ~52px+ at narrow
-  // widths, and no Leaflet event fires on that content reflow — a ResizeObserver on the attribution
-  // node is the correct primitive (it also fires once immediately for the initial value). We write
-  // offsetHeight (LOCAL, un-zoomed px) to --attr-h on :root; the CSS calc consuming it
-  // lives in the zoom:1.25 chrome subtree and pre-divides by that zoom, so the value must stay in
-  // un-zoomed px (getBoundingClientRect would be zoom-scaled and double-count). rAF-wrap the write
-  // to avoid the "ResizeObserver loop" warning. Guarded for when the control/observer is absent.
   const attrEl = map.attributionControl && map.attributionControl.getContainer();
   // Collapsible attribution: the required ODbL + source credits were eating a strip of the map (on
   // mobile they wrapped to ~5 lines), so collapse them to one compact line by default; tapping the
@@ -118,18 +113,6 @@ export function initMap() {
       if (e.target.closest && e.target.closest("a")) return;  // let credit links through
       attrEl.classList.toggle("attr-open");
     });
-  }
-  if (attrEl && typeof ResizeObserver !== "undefined") {
-    // The control stacks (.map-ctl-bl/.map-ctl-br) are siblings of #map under <body>, not children
-    // of the map container, so the var must live on a shared ancestor to inherit into them — set it
-    // on :root (documentElement), matching the CSS fallback declared there. The map container is not
-    // zoomed, so offsetHeight is un-zoomed px in either place.
-    const root = document.documentElement;
-    const setAttrH = () => root.style.setProperty("--attr-h", attrEl.offsetHeight + "px");
-    const attrRo = new ResizeObserver(() => requestAnimationFrame(setAttrH));
-    attrRo.observe(attrEl); // fires once immediately for the initial value
-    setAttrH();             // belt-and-suspenders initial set (before first rAF)
-    map.on("unload", () => attrRo.disconnect());
   }
 
   // ("Show my location" lives in js/locate.js as a plain themed HTML button in the bottom-right

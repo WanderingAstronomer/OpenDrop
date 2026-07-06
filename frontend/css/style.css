@@ -120,7 +120,12 @@ html, body {
    dead map space that only vanished while a panel was open. Absolutely-positioned children do not
    expand their containing block, so body stays viewport-width and the panels still dock flush. */
 body { position: relative; }
-#map { position: absolute; inset: 0; background: var(--map-base); }
+/* THE LAYOUT CONTRACT (responsive redesign): the map is a FIXED base layer -- never a layout
+   child, so no rail/sheet/panel can ever squeeze it. Everything else overlays it on one documented
+   z-scale:  map 0  <  map controls / FABs 10  <  rails & sheets 20  <  top bar 30  <  popovers 40
+   (modals/toasts keep their historical 1500+ values -- always above every band). */
+:root { --z-ctl: 10; --z-rail: 20; --z-bar: 30; --z-pop: 40; }
+#map { position: fixed; inset: 0; width: 100dvw; height: 100dvh; z-index: 0; background: var(--map-base); }
 
 /* Screen-reader-only text (page h1, search live region). Both class names resolve to one rule so
    markup can use either; new markup standardizes on .sr-only. */
@@ -201,12 +206,12 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
    used length INCLUDING vw/vh is multiplied by the factor, so viewport-derived formulas below are
    pre-divided by it. Full-height drawers/modals (.list-panel, .photo-modal, .pin-sheet) are
    excluded (inset-anchored boxes don't zoom cleanly) and get explicit font bumps instead. */
-.leaflet-control-container, .map-ctl-bl, .map-ctl-br, .map-status, .toast-host, .panel { zoom: 1.25; }
+.map-status, .toast-host, .panel { zoom: 1.25; }
 
 /* Keyboard focus rings for the chrome buttons: their box-shadow declarations out-cascade the
    global :focus-visible rule, so restore the ring explicitly (ring stacked over the elevation). */
-.locate-btn:focus-visible, .add-btn:focus-visible, .list-toggle:focus-visible,
-.icon-btn:focus-visible, .list-close:focus-visible { box-shadow: var(--focus), var(--shadow); }
+.locate-btn:focus-visible, .add-btn:focus-visible, .bar-btn:focus-visible,
+.zoom-btn:focus-visible, .list-close:focus-visible { box-shadow: var(--focus), var(--shadow); }
 
 /* Phones: the zoomed submit panel's content box would drop below Cloudflare Turnstile's hard
    300px minimum width and clip the widget in the Add flow — un-zoom it there. */
@@ -216,46 +221,29 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
   .panel { zoom: 1; }
 }
 
-/* Below ~900px even the 1.3x search bar can graze the always-expanded basemap card in the
-   top-right — drop to the original 1x there. */
-@media (max-width: 900px) {
-  /* un-zoom the search so it can reach full usable width on small screens; as a flex item it fills
-     the track between the (icon-only, then hidden) brand and the reserved right corner. */
-  .search { zoom: 1; max-width: 400px; }
-  .search-results { max-height: 50vh; }
-}
-
-/* Very narrow screens: keep the bottom-left legend and bottom-right button stack from colliding. */
-@media (max-width: 420px) {
-  /* zoom drops to 1.1 here — keep --ctl-zoom in step so the attribution-tracking bottom calc stays
-     divided by the actual zoom factor. */
-  .map-ctl-bl, .map-ctl-br { zoom: 1.1; --ctl-zoom: 1.1; }
-}
-
 /* ============================ MAP CHROME ================================== */
 
-/* Bottom-left control stack (legend + List/theme buttons) */
-/* buttons row sits ABOVE the legend and stretches to the legend's (wider) width */
-/* Both bottom stacks anchor a consistent small gap above the REAL Leaflet attribution strip. JS
-   (map.js) measures the attribution's live height (it wraps 26px -> ~52px at narrow widths) with a
-   ResizeObserver and writes it to --attr-h (local, un-zoomed px) on :root (the stacks are siblings
-   of #map, so the var lives on a shared ancestor to inherit into them). Because these
-   stacks live in the zoom:1.25 subtree, `bottom` is multiplied by 1.25 at layout — so the calc is
-   pre-divided by 1.25 to keep the VISUAL gap constant (the attribution itself is un-zoomed). The
-   var() fallback is a single-line attribution height for first paint before JS runs. */
-/* --ctl-gap: shared visual gap above the attribution. --ctl-zoom: the effective `zoom` on these
-   stacks (1.25 here; 1.1 at <=420px) — the bottom calc divides by it so the visual gap is constant
-   regardless of the chrome-zoom factor at each breakpoint. */
-:root { --ctl-gap: 12px; --ctl-zoom: 1.25; }
-.map-ctl-bl { position: absolute; bottom: calc((var(--attr-h, 26px) + var(--ctl-gap)) / var(--ctl-zoom)); left: 12px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
-.ctl-row { display: flex; gap: 8px; }
-.ctl-row .list-toggle { flex: 1; }
-.legend {
-  background: var(--surface); color: var(--ink); padding: 11px 13px; border-radius: var(--r-ctl);
-  box-shadow: var(--shadow); border: 1px solid var(--border); font-size: 14px; line-height: 1.7;
-  text-align: center;
+/* Popovers (z40) + the shared click-away backdrop (z39). The confidence legend and the basemap
+   picker both live here now, opened from the top-bar action cluster (or the mobile FABs) — nothing
+   is permanently parked over the map corners anymore. */
+.pop-backdrop { position: fixed; inset: 0; z-index: calc(var(--z-pop) - 1); background: transparent; }
+.map-pop {
+  position: fixed; top: calc(env(safe-area-inset-top) + 72px); right: 12px; z-index: var(--z-pop);
+  width: 236px; padding: 8px; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
 }
-.legend { min-width: 210px; }
+#legend-pop { width: 254px; padding: 16px; }
+.pop-row {
+  width: 100%; min-height: 44px; display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border: none; border-radius: 10px; background: transparent; color: var(--ink);
+  font-size: 15px; font-weight: 600; text-align: left; cursor: pointer;
+}
+.pop-row:hover { background: var(--surface-2); }
+.pop-row.active { background: var(--accent-soft); color: var(--accent); }
+.pop-swatch { width: 20px; height: 20px; border-radius: 5px; flex: none; border: 1px solid var(--border); }
+
+/* The legend content (unchanged markup) — its own card chrome is gone; the popover IS the card. */
+.legend { color: var(--ink); font-size: 14px; line-height: 1.7; text-align: center; }
 .legend strong { display: block; font-size: 17px; margin-bottom: 5px; color: var(--brand); white-space: nowrap; }
 .legend-row { display: flex; align-items: center; justify-content: center; gap: 7px; }
 
@@ -289,67 +277,67 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .ring-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 50%; }
 .ring-swatch.pending { background: transparent; border: 2px solid #a855f7; box-shadow: 0 0 3px rgba(168, 85, 247, .7); }
 
-.list-toggle, .icon-btn {
-  background: var(--surface); color: var(--ink); border: 1px solid var(--border);
-  border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow);
+/* Top-bar action buttons (layers / legend "i" / theme) — 44px targets per the redesign. On mobile
+   the legend+theme pair (#util-cluster) is relocated to a bottom-left FAB stack by js/chrome.js. */
+.bar-btn {
+  width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; flex: none;
+  background: var(--surface); color: var(--ink-2); border: 1px solid var(--border);
+  border-radius: 12px; font-size: 16px; font-weight: 700; line-height: 1; cursor: pointer;
 }
-.list-toggle:hover, .icon-btn:hover { background: var(--surface-2); }
-.icon-btn { padding: 8px 11px; font-size: 16px; line-height: 1; }
+.bar-btn:hover { background: var(--surface-2); color: var(--ink); }
 .theme-toggle { font-size: 17px; }
+.topbar-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.util-cluster.in-bar { display: flex; align-items: center; gap: 8px; }
 
-/* ---- TOP BAR (flex row: brand | search) --------------------------------------------------------
-   Absolute overlay strip above the map. It is a FLEX ROW so the brand and search reflow next to
-   each other and never overlap — replacing the old absolute + translateX(-50%) centering that let
-   the search eclipse the logo at ~half-width. The bar spans the viewport (minus a 12px gutter each
-   side) but reserves the top-right for Leaflet's basemap layers control via padding-right so the
-   centered search never slides under it. pointer-events:none keeps the empty band click-through to
-   the map; the interactive children re-enable events. The strip has NO height/paint of its own, so
-   Leaflet's absolute #map overlay is untouched. */
+/* ---- TOP BAR (z30) -----------------------------------------------------------------------------
+   The redesign's chrome bar: brand | flex search | action cluster. Desktop (>=1024px): a full-width
+   64px surface the side rails tuck under (rails start at top:64). Mobile: a floating row on a
+   gradient scrim with safe-area padding. Flex means nothing can overlap — the search shrinks, never
+   slides. pointer-events:none keeps any empty band click-through; children re-enable events. */
 .topbar {
-  position: absolute; top: 12px; left: 12px; right: 12px; z-index: 1200;
-  display: flex; align-items: flex-start; gap: 12px;
-  /* reserve the top-right basemap card's footprint (expanded ~150px desktop) so centered search
-     stops short of it; the card lives outside this flex row. */
-  padding-right: 150px;
+  position: fixed; top: 0; left: 0; right: 0; z-index: var(--z-bar);
+  display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 16px;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   pointer-events: none;
 }
 .topbar > * { pointer-events: auto; }
 
-/* Brand logo (icon + "OpenDrop" wordmark, 2:1), on a card matching the List/legend chrome so it
-   reads on the light basemap. flex:0 0 auto — it never shrinks; the search yields first. */
-.brand {
-  flex: 0 0 auto; z-index: 1000; line-height: 0;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--r-ctl); box-shadow: var(--shadow); padding: 7px 12px;
-}
-.brand-logo { display: block; height: 71px; width: auto; }
-/* Below 1024px the full wordmark lockup would crowd the search — crop the card to show only the
-   icon third of the logo (the wordmark art is the right two-thirds of a 2:1 image). The corner is
-   never empty, and the search gains the reclaimed width. */
+/* Brand lockup (icon + wordmark, 2:1 image). The bar is the surface — no card chrome of its own. */
+.brand { flex: 0 0 auto; line-height: 0; }
+.brand-logo { display: block; height: 44px; width: auto; }
+/* Mobile: the bar floats on a scrim instead of being a solid surface, and the brand crops to a
+   44px icon-only card (the wordmark art is the right two-thirds of the image). */
 @media (max-width: 1023px) {
-  .brand { overflow: hidden; width: 40px; padding: 7px; }
-  .brand-logo { height: 51px; }
-}
-/* On phones the collapsed layers card shrinks to a ~44px icon, so the bar needs far less right
-   reservation; and the search un-zooms to near-full width (see .search below). */
-@media (max-width: 767px) {
-  .topbar { padding-right: 56px; }
-  .brand { display: none; } /* wordmark + icon both drop on phones; app title lives in the tab */
+  .topbar {
+    height: auto; align-items: center; gap: 8px;
+    padding: calc(env(safe-area-inset-top) + 10px) 12px 10px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, transparent),
+                color-mix(in srgb, var(--surface) 40%, transparent) 80%, transparent);
+    border-bottom: none; backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  .brand {
+    overflow: hidden; width: 44px; height: 44px; padding: 7px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; box-shadow: var(--shadow-sm);
+  }
+  .brand-logo { height: 30px; }
 }
 
-/* Bottom-right chrome stack: locate button above the Add CTA, right-aligned, reflowing together.
-   Anchored to the SAME attribution-tracking baseline as .map-ctl-bl (shared --ctl-gap, same /1.25
-   zoom pre-division) so both stacks' bottom edges line up a consistent distance above the real
-   attribution at any width. Gap unified to 8px to match the bottom-left stack. */
+/* Bottom-right control stack (z10): zoom pill above locate above the Add CTA. The attribution
+   lives in the OPPOSITE corner (bottom-left) now, so no height-tracking is needed — separate
+   corners simply cannot collide. Desktop: shifts left when the detail rail opens. */
 .map-ctl-br {
-  position: absolute; right: 16px; bottom: calc((var(--attr-h, 26px) + var(--ctl-gap)) / var(--ctl-zoom)); z-index: 1000;
-  display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+  position: fixed; right: 16px; bottom: 16px; z-index: var(--z-ctl);
+  display: flex; flex-direction: column; align-items: flex-end; gap: 12px;
 }
 
-/* Add button (primary CTA) */
+/* Add button (primary CTA) — 48px per the redesign */
 .add-btn {
-  background: var(--accent); color: var(--on-accent); border: none; border-radius: var(--r-pill);
-  padding: 13px 20px; font-size: 15px; font-weight: 700; cursor: pointer; box-shadow: var(--shadow);
+  display: flex; align-items: center; justify-content: center; height: 48px;
+  background: var(--accent); color: var(--on-accent); border: none; border-radius: 14px;
+  padding: 0 20px; font-size: 15px; font-weight: 700; cursor: pointer; box-shadow: var(--shadow);
 }
 .add-btn:hover { background: var(--accent-hover); }
 
@@ -392,12 +380,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
    its content on narrow screens (min-width:0). `margin:0 auto` centers it within whatever free space
    remains after the brand + reservations — so it stays optically centered on wide screens yet
    recenters inside the shrunk track when a side panel reserves margin (see panel-open rules below).
-   Scaled 1.3x via zoom (chrome, participates in layout); widths are authored in local px, so the
-   effective size is ×1.3 — the max-width is pre-divided by 1.3 to keep the on-screen cap constant. */
-.search {
-  flex: 1 1 auto; min-width: 0; margin: 0 auto; z-index: 1200;
-  zoom: 1.3; max-width: calc(400px / 1.3);
-}
+   Plain 44px field per the redesign (the old 1.3x zoom scaling is gone with the floating card). */
+.search { flex: 1 1 auto; min-width: 0; margin: 0 auto; max-width: 520px; position: relative; }
+.search .search-field input { height: 44px; font-size: 15px; }
 /* the clear button centers on the INPUT (not the whole search wrapper, which grows with the
    results list) — hence the .search-field positioning context around just the input + button */
 .search-field { position: relative; }
@@ -416,7 +401,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .search input:focus { border-color: var(--accent); box-shadow: var(--focus), var(--shadow); }
 .search-results {
   list-style: none; margin: 6px 0 0; padding: 5px; background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--r-ctl); box-shadow: var(--shadow); max-height: calc(50vh / 1.3); overflow-y: auto;
+  border-radius: var(--r-ctl); box-shadow: var(--shadow); max-height: 50vh; overflow-y: auto;
 }
 .search-results:empty { display: none; }
 .search-results li { padding: 9px 11px; border-radius: 8px; font-size: 13px; cursor: pointer; color: var(--ink); }
@@ -427,7 +412,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 
 /* Loading / empty / error banner */
 .map-status {
-  position: absolute; top: 84px; left: 50%; transform: translateX(-50%); z-index: 1100; /* clears the 1.75x search */
+  position: fixed; top: calc(env(safe-area-inset-top) + 76px); left: 50%; transform: translateX(-50%); z-index: var(--z-bar); /* just under the 64px bar */
   background: rgba(16, 24, 40, 0.92); color: #fff; padding: 9px 16px; border-radius: var(--r-pill);
   font-size: 13px; box-shadow: var(--shadow); max-width: calc(80vw / 1.25); text-align: center;
 }
@@ -707,13 +692,12 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
 /* selected-marker ring (SVG path stroke takes var() via CSS rules, unlike presentation attrs) */
 .marker-selected { stroke: var(--accent) !important; stroke-width: 3.5 !important; }
 
-/* desktop dock — RIGHT side, so it never covers the left-docked list (both can be open at once:
-   list on the left, this detail panel on the right). */
-@media (min-width: 768px) {
-  /* --pp-w: the dock's rendered width, reused by the tab so it slides EXACTLY the panel's distance. */
-  .place-panel { --pp-w: min(408px, calc(100vw - 56px)); }
+/* desktop dock — RIGHT rail below the 64px top bar (list rail on the left; both can be open). */
+@media (min-width: 1024px) {
+  /* --pp-w: the rail's rendered width, reused by the tab so it slides EXACTLY the panel's distance. */
+  .place-panel { --pp-w: min(400px, 40vw); }
   .place-panel {
-    top: 0; right: 0; bottom: 0; width: var(--pp-w);
+    top: 64px; right: 0; bottom: 0; width: var(--pp-w);
     border-left: 1px solid var(--border); box-shadow: var(--shadow);
     transform: translateX(100%);
   }
@@ -736,25 +720,46 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
   .pp-tab:hover { color: var(--ink); background: var(--surface-2); }
 }
 
-/* mobile two-snap sheet */
-@media (max-width: 767px) {
-  .place-panel {
-    left: 0; right: 0; bottom: 0;
-    height: calc(100dvh - 48px); /* dvh, not vh — 100vh sits under iOS Safari's toolbar */
-    border-top: 1px solid var(--border); border-radius: 16px 16px 0 0; box-shadow: var(--shadow);
-    transform: translateY(100%);
+/* Mobile (<1024px): ONE bottom sheet, two modes. Both surfaces are sheet-styled and mutually
+   exclusive — the list sheet is always resting (peek ≈ 13dvh); opening a place hides it and the
+   place sheet takes over at the same dock. Heights are driven by js/sheet.js (3 snaps:
+   peek / half 55dvh / full 92dvh); CSS only supplies the shell. */
+@media (max-width: 1023px) {
+  .place-panel, .list-panel {
+    position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto;
+    height: max(92px, 13dvh);
+    border: 1px solid var(--border); border-bottom: none; border-radius: 22px 22px 0 0;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.35);
+    transform: none; padding-bottom: env(safe-area-inset-bottom);
   }
-  .place-panel.open.peek { transform: translateY(calc(70dvh - 48px)); } /* 30dvh visible */
-  .place-panel.open.full { transform: translateY(0); }
-  .place-panel.dragging { transition: none; }
-  .pp-head { touch-action: none; } /* the drag handle owns vertical gestures — don't let the page scroll steal them */
-  .place-panel:not(.full) .pp-body { overflow: hidden; } /* inner scroll only at FULL */
-  .pp-grab { display: block; width: 100%; height: 22px; background: none; border: none; cursor: grab; padding: 0; }
-  .pp-grab::before {
-    content: ""; display: block; width: 36px; height: 4px; border-radius: 2px;
-    background: var(--border-2); margin: 6px auto 0;
+  .place-panel.dragging, .list-panel.dragging { transition: none; }
+  /* .open beats the base visibility:hidden regardless of file order (the base rule sits later) */
+  .list-panel.open { visibility: visible; }
+  /* one sheet at a time: an open place panel supersedes the resting list sheet */
+  body:has(.place-panel.open) .list-panel { visibility: hidden; }
+  /* drag handles (pointer wiring in sheet.js); the pp-head also drags the place sheet */
+  .pp-head { touch-action: none; }
+  .pp-grab, .list-grab {
+    display: block; flex: none; width: 100%; height: 30px;
+    background: none; border: none; cursor: grab; padding: 0; touch-action: none;
   }
-  .pp-tab { display: none; }
+  .pp-grab::before, .list-grab::before {
+    content: ""; display: block; width: 44px; height: 5px; border-radius: 3px;
+    background: var(--border-2); margin: 12px auto 0;
+  }
+  .pp-tab, .list-tab { display: none; }
+  /* FABs ride above the resting sheet; the zoom pill yields to pinch on touch layouts */
+  .zoom-ctl { display: none; }
+  .map-ctl-br { bottom: calc(env(safe-area-inset-bottom) + max(92px, 13dvh) + 12px); }
+  .util-cluster:not(.in-bar) {
+    position: fixed; left: 16px; bottom: calc(env(safe-area-inset-bottom) + max(92px, 13dvh) + 12px);
+    z-index: var(--z-ctl); display: flex; flex-direction: column; gap: 12px;
+  }
+  .util-cluster:not(.in-bar) .bar-btn { width: 48px; height: 48px; border-radius: 14px; box-shadow: var(--shadow-sm); }
+  /* attribution pill sits just above the resting sheet */
+  .leaflet-bottom.leaflet-left { bottom: calc(max(92px, 13dvh) + 8px); }
+  /* welcome hero clears the sheet too */
+  .welcome-hero { left: 12px; right: 12px; width: auto; bottom: calc(env(safe-area-inset-bottom) + max(92px, 13dvh) + 12px); }
 }
 
 /* ===== T26: overlay-panel chrome behavior ===== */
@@ -764,61 +769,39 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
 .pp-chev { display: inline-block; transition: transform .2s ease; }
 .pp-tab.is-collapsed .pp-chev { transform: rotate(180deg); }
 
-/* Chrome clears open overlay panels (desktop dock only; phones use bottom sheets).
-   TOP BAR: reserve the panel's width with real LAYOUT (padding on the flex .topbar) instead of a
-   transform. The flex algorithm then recomputes the free space and `margin:0 auto` recenters the
-   search inside the SHRUNK track — so the search is pushed away from the panel, never slid over it.
-   The .topbar is un-zoomed, so these are real px (no /zoom pre-division). The right reservation
-   already holds 150px for the layers card; an open place panel (>=408px) supersedes it, and an open
-   list drawer reserves on the left. BOTTOM corner stacks keep their transform slide (they carry
-   zoom:1.25, hence the /1.25). :not(.collapsed) so a collapsed (off-screen) panel releases the
-   reservation. */
-@media (min-width: 768px) {
-  .map-ctl-bl, .map-ctl-br { transition: transform .2s ease; }
-  .topbar { transition: padding .2s ease; }
-  body:has(.place-panel.open:not(.collapsed)) .map-ctl-br { transform: translateX(calc(min(408px, calc(100vw - 56px)) / -1.25)); }
-  body:has(.list-panel.open:not(.collapsed)) .map-ctl-bl { transform: translateX(calc(min(420px, 85vw) / 1.25)); }
-
-  /* place panel open (right dock) -> reserve its width on the right of the bar */
-  body:has(.place-panel.open:not(.collapsed)) .topbar {
-    padding-right: calc(min(408px, calc(100vw - 56px)) + 12px);
-  }
-  /* list drawer open (left dock) -> reserve its width on the left of the bar */
-  body:has(.list-panel.open:not(.collapsed)) .topbar {
-    padding-left: calc(min(420px, 85vw) + 12px);
-  }
-  /* both open -> reserve both sides */
-  body:has(.list-panel.open:not(.collapsed)):has(.place-panel.open:not(.collapsed)) .topbar {
-    padding-left: calc(min(420px, 85vw) + 12px);
-    padding-right: calc(min(408px, calc(100vw - 56px)) + 12px);
-  }
-  /* Below ~1100px, both docks (420 + 408 ≈ 828px) plus the brand leave too little center track and
-     the panels already blanket the top bar — drop the brand so the (shrinkable) search doesn't get
-     squeezed out of its padding box and spill. */
-  @media (max-width: 1100px) {
-    body:has(.list-panel.open:not(.collapsed)):has(.place-panel.open:not(.collapsed)) .brand { display: none; }
-  }
+/* Desktop chrome yields to the rails: the bottom-right stack shifts left of the open detail rail,
+   and the attribution pill shifts right of the open list rail. The top bar spans full width ABOVE
+   both rails (they start at top:64), so it never needs to reserve anything. */
+@media (min-width: 1024px) {
+  .map-ctl-br { transition: right .2s ease; }
+  body:has(.place-panel.open:not(.collapsed)) .map-ctl-br { right: calc(min(400px, 40vw) + 16px); }
+  .leaflet-bottom.leaflet-left { transition: left .2s ease; }
+  body:has(.list-panel.open:not(.collapsed)) .leaflet-bottom.leaflet-left { left: 340px; }
 }
 
 /* ============================ LIST PANEL ================================ */
 .list-close { margin-left: 4px; background: none; border: none; font-size: 16px; cursor: pointer; color: var(--ink-2); padding: 2px 6px; border-radius: 6px; }
 .list-close:hover { color: var(--ink); background: var(--surface-3); }
 .list-panel {
-  position: absolute; top: 0; left: 0; bottom: 0; z-index: 1300; width: min(420px, 85vw);
-  background: var(--surface); box-shadow: var(--shadow); border-right: 1px solid var(--border);
-  transform: translateX(-100%); display: flex; flex-direction: column;
-  /* visibility rides the transition so the CLOSED drawer's controls leave the tab order
-     (focusable content inside aria-hidden = focus lost off-screen) */
-  visibility: hidden; transition: transform 0.2s ease, visibility 0s linear 0.2s;
+  position: fixed; z-index: var(--z-rail); background: var(--surface);
+  display: flex; flex-direction: column; visibility: hidden;
 }
-.list-panel.open { transform: translateX(0); visibility: visible; transition: transform 0.2s ease; }
-.list-panel.open.collapsed { transform: translateX(-100%); visibility: hidden; transition: transform .2s ease, visibility 0s linear .2s; }
 
 /* list edge tab — mirror of .pp-tab, on the list's RIGHT edge (desktop only); chevron rotates in
    sync with the slide, same pattern as the detail panel's tab. */
 .list-chev { display: inline-block; transition: transform .2s ease; }
 .list-tab.is-collapsed .list-chev { transform: rotate(180deg); }
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
+  /* Left rail: below the 64px bar, 340px wide (redesign), slides out behind the child tab. */
+  .list-panel {
+    top: 64px; left: 0; bottom: 0; width: 340px;
+    box-shadow: var(--shadow); border-right: 1px solid var(--border);
+    transform: translateX(-100%);
+  }
+  /* visibility rides the transition so the COLLAPSED rail's controls leave the tab order */
+  .list-panel { transition: transform .2s ease, visibility 0s linear .2s; }
+  .list-panel.open { transform: translateX(0); visibility: visible; transition: transform 0.2s ease; }
+  .list-panel.open.collapsed { transform: translateX(-100%); visibility: hidden; transition: transform .2s ease, visibility 0s linear .2s; }
   /* Child of the drawer (same technique as .pp-tab): the drawer's own transform slides the tab in
      lockstep — one animation, no desync. Sits just off the drawer's right edge (right:-28px);
      collapsing (drawer translateX(-100%)) carries it to the screen's left edge. */
@@ -832,7 +815,6 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
   }
   .list-tab:hover { color: var(--ink); background: var(--surface-2); }
 }
-@media (max-width: 767px) { .list-tab { display: none; } }
 .list-head { display: flex; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border); }
 .list-head label { margin: 0; font-size: 16px; color: var(--ink-2); }
 .list-head select { flex: 1; font-size: 16px; }
@@ -920,13 +902,19 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
    they don't eat a strip of the map (worst on mobile, where they wrapped to ~5 lines); tapping the
    strip (not a credit link) toggles the full text. ODbL only requires attribution be visible/
    accessible — this keeps it so, just out of the way. */
+/* Attribution: a compact themed pill, bottom-left (Leaflet corner), collapsed to one line —
+   tap to expand the full ODbL + source credits (required attribution stays accessible). */
+.leaflet-control-attribution {
+  background: color-mix(in srgb, var(--surface) 72%, transparent) !important;
+  color: var(--ink-3); border-radius: 6px; padding: 3px 8px; font-size: 11px;
+}
 .leaflet-control-attribution.attr-collapsible {
   max-width: 52vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
 }
 .leaflet-control-attribution.attr-collapsible.attr-open {
   max-width: min(94vw, 680px); white-space: normal; cursor: default;
 }
-@media (max-width: 767px) {
+@media (max-width: 1023px) {
   .leaflet-control-attribution.attr-collapsible { max-width: 62vw; font-size: 10px; }
 }
 
@@ -981,32 +969,9 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
 /* Restyle Leaflet's default top-right layers control into a tidy titled card with
    segmented-looking radio rows. The native control keeps doing the work (radios,
    baselayerchange); this is purely cosmetic. */
-.leaflet-control-layers.odc-basemaps {
-  background: var(--surface); color: var(--ink);
-  border: 1px solid var(--border); border-radius: var(--r-ctl);
-  box-shadow: var(--shadow); padding: 8px; min-width: 130px;
-}
-.odc-basemaps .leaflet-control-layers-list { margin: 0; }
-.odc-basemaps-t {
-  font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
-  color: var(--ink-3); padding: 0 5px 6px; text-align: center;
-}
-.odc-basemaps label {
-  display: flex; align-items: center; gap: 9px; margin: 0; padding: 7px 9px;
-  border-radius: var(--r-input); font-size: 13px; font-weight: 600;
-  color: var(--ink-2); cursor: pointer;
-}
-.odc-basemaps label + label { margin-top: 2px; }
-.odc-basemaps label:hover { background: var(--surface-2); color: var(--ink); }
-.odc-basemaps label:has(input:checked) { background: var(--accent-soft); color: var(--accent); }
-.odc-basemaps label input[type="radio"] { width: auto; margin: 0; accent-color: var(--accent); }
-.odc-basemaps label span { line-height: 1.1; }
+/* (the old in-map Leaflet layers card was replaced by the top-bar layers popover) */
 
 /* ============================ LEAFLET DARK CHROME ====================== */
-:root[data-theme="dark"] .leaflet-bar a,
-:root[data-theme="dark"] .leaflet-control-layers {
-  background: var(--surface); color: var(--ink); border-color: var(--border);
-}
 :root[data-theme="dark"] .leaflet-bar a { border-bottom-color: var(--border); }
 :root[data-theme="dark"] .leaflet-bar a:hover { background: var(--surface-2); }
 :root[data-theme="dark"] .leaflet-control-layers-toggle { filter: invert(0.9) hue-rotate(180deg); }
@@ -1039,7 +1004,7 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
 /* ============================ DETAIL-PANEL + CHROME REFINEMENTS ========= */
 /* zoom buttons in the bottom-right stack (above the locate button) */
 .zoom-ctl { display: flex; flex-direction: column; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); box-shadow: var(--shadow); }
-.zoom-btn { width: 46px; height: 40px; border: none; background: var(--surface); color: var(--ink); font-size: 20px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
+.zoom-btn { width: 46px; height: 46px; border: none; background: var(--surface); color: var(--ink); font-size: 22px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
 .zoom-btn:hover { background: var(--surface-2); }
 .zoom-btn + .zoom-btn { border-top: 1px solid var(--border); }
 
@@ -1103,7 +1068,7 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
   .toast { transition: opacity 0.01ms; }
   .list-panel, .list-tab, .list-chev { transition: none; }
   .place-panel, .pp-tab, .pp-chev { transition: none; }
-  .topbar, .map-ctl-bl, .map-ctl-br { transition: none; }
+  .topbar, .map-ctl-br { transition: none; }
   .ts { transition: none; }
   .btn:active { transform: none; }
   .locate-btn, .locate-btn:hover { transform: none; }
@@ -1174,12 +1139,6 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
      1.25 chrome zoom, leaving ~274px content on a 375px phone), and switch to dvh so iOS Safari's
      dynamic toolbar can't clip the form's heading. */
   .panel { max-width: calc(100vw - 20px); max-height: calc(100dvh - 110px); padding: 14px; }
-  /* Lift the bottom-left confidence legend clear of the bottom-right "+ Add location" button — on a
-     ~375px screen the two corner stacks otherwise share a vertical band and the button covers the
-     legend's links. Anchor to the SAME attribution-tracking baseline as the base rule, then add the
-     bottom-right button-stack height (~60px: locate 46 + gap 8 + Add ~44, all in local px, so also
-     /var(--ctl-zoom)) so the legend clears it and still tracks the real attribution height. */
-  .map-ctl-bl { bottom: calc((var(--attr-h, 26px) + var(--ctl-gap) + 60px) / var(--ctl-zoom)); }
 }
 
 /* search-clear ✕ is a 16px visual inside the input; give touch users a >=24px hit target (WCAG

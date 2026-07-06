@@ -18,12 +18,15 @@ import { mountPhotos } from "./photos.js";
 import { app } from "./state.js";
 import { toast } from "./toast.js";
 import { guard, verifyFailMessage } from "./turnstile.js";
+import { makeSheet } from "./sheet.js";
 import { mountVote } from "./vote.js";
 import { prefersReducedMotion } from "./viewport.js";
 
-const DESKTOP_MQ = "(min-width: 768px)";
-const PANEL_W = 408;   // Google's own full-detail cap (~408px on maps.google.com)
-const PEEK_FRACTION = 0.30;
+const DESKTOP_MQ = "(min-width: 1024px)";  // the redesign's single layout cutover
+const PANEL_W = 400;   // right-rail width per the responsive redesign
+// Mobile: selecting a place lifts the sheet to HALF (55dvh), leaving the top ~45% of the map
+// visible — offsetPan centers the pin in that visible band.
+const SHEET_HALF = 0.55;
 
 let map = null;
 let panelEl = null, bodyEl = null, titleEl = null, subEl = null, addrEl = null, dirEl = null, grabEl = null, tabEl = null;
@@ -257,11 +260,12 @@ function setHidden(hidden) {
   panelEl.setAttribute("aria-hidden", String(hidden));
 }
 
+let sheet = null; // mobile 3-snap bottom-sheet controller (shared helper) — created in initPlacePanel
+
 function setSheetState(state) {
-  // mobile only: "peek" | "full"
-  panelEl.classList.toggle("full", state === "full");
-  panelEl.classList.toggle("peek", state === "peek");
-  grabEl.setAttribute("aria-expanded", String(state === "full"));
+  // mobile only: "peek" | "half" | "full" (three snaps per the redesign)
+  if (sheet) sheet.setSnap(state);
+  grabEl.setAttribute("aria-expanded", String(state !== "peek"));
 }
 
 function setCollapsed(collapsed) {
@@ -293,7 +297,7 @@ function offsetPan(latlng) {
     ty = size.y / 2;
   } else {
     tx = size.x / 2;
-    ty = (size.y * (1 - PEEK_FRACTION)) / 2;
+    ty = (size.y * (1 - SHEET_HALF)) / 2; // sheet sits at half on select — center in the visible top
   }
   map.panBy([p.x - tx, p.y - ty], { animate: !prefersReducedMotion() });
 }
@@ -336,7 +340,8 @@ export async function openPlacePanel(latlng, id) {
   setHidden(false);
   setCollapsed(false);
   tabEl.hidden = !isDesktop();
-  if (!isDesktop()) setSheetState(switching ? (panelEl.classList.contains("full") ? "full" : "peek") : "peek");
+  // Mobile: selecting lifts the sheet to half; if the user already had it half/full, keep their snap.
+  if (!isDesktop()) setSheetState(sheet && sheet.snap() !== "peek" ? sheet.snap() : "half");
   offsetPan(latlng);
 
   let d;
@@ -451,58 +456,30 @@ export function initPlacePanel(m) {
   // Desktop collapse: the edge tab toggles the panel away/back, selection retained.
   tabEl.onclick = () => setCollapsed(!panelEl.classList.contains("collapsed"));
 
-  // Mobile: grabber toggles peek/full; drag with pointer events, two snaps, nearest on release.
-  grabEl.hidden = isDesktop();
-  window.matchMedia(DESKTOP_MQ).addEventListener?.("change", (e) => {
-    grabEl.hidden = e.matches;
-    // A panel open across a breakpoint crossing would otherwise be left stateless: on desktop the
-    // mobile .peek/.full classes mean nothing, and on mobile the base rule translates the sheet
-    // fully off-screen unless one of them is set (rotate a tablet with a place open → it vanishes).
-    // Re-seat it into the layout the new mode expects.
-    if (!currentId) return;
-    if (e.matches) setCollapsed(false);                                       // entered desktop dock
-    else setSheetState(panelEl.classList.contains("full") ? "full" : "peek"); // entered bottom sheet
-  });
-  grabEl.onclick = () => setSheetState(panelEl.classList.contains("full") ? "peek" : "full");
-
-  let drag = null;
+  // Mobile: the panel is a bottom sheet on the shared 3-snap helper (peek/half/full); the grab
+  // handle and the header both drag it. Desktop: the helper is disabled and the rail CSS owns
+  // the box. Re-seat on breakpoint crossings so a panel open across a rotation isn't stranded.
   const head = panelEl.querySelector(".pp-head");
-  head.addEventListener("pointerdown", (e) => {
-    if (isDesktop() || !currentId) return;
-    drag = { y0: e.clientY, t0: panelEl.getBoundingClientRect().top, moved: false };
-    head.setPointerCapture(e.pointerId);
-    panelEl.classList.add("dragging");
-  });
-  head.addEventListener("pointermove", (e) => {
-    if (!drag) return;
-    const dy = e.clientY - drag.y0;
-    if (Math.abs(dy) > 4) drag.moved = true;
-    // translate within [full-top, peek-top]; CSS anchors the sheet at full height
-    const vh = window.innerHeight;
-    const fullTop = 48, peekTop = vh * (1 - PEEK_FRACTION);
-    const target = Math.min(peekTop, Math.max(fullTop, drag.t0 + dy));
-    panelEl.style.transform = `translateY(${target - fullTop}px)`;
-  });
-  // One release path for pointerup AND pointercancel (gesture takeover, rotation, an incoming call).
-  // Without a pointercancel handler an interrupted drag stranded the sheet mid-screen with its
-  // transition still suppressed by .dragging. Read the dragged position BEFORE clearing the inline
-  // transform — clearing first snaps the box to its class position, so the old code always measured
-  // "peek" and the drag-to-expand gesture could never reach full.
-  const endDrag = () => {
-    if (!drag) return;
-    const vh = window.innerHeight;
-    const draggedTop = panelEl.getBoundingClientRect().top;
-    const moved = drag.moved;
-    drag = null;
-    panelEl.classList.remove("dragging");
-    panelEl.style.transform = "";
-    if (moved) {
-      const mid = (48 + vh * (1 - PEEK_FRACTION)) / 2;
-      setSheetState(draggedTop < mid ? "full" : "peek");
+  sheet = makeSheet(panelEl, [grabEl, head], { content: bodyEl });
+  const seat = (desktop) => {
+    grabEl.hidden = desktop;
+    tabEl.hidden = desktop ? !currentId : true;
+    if (desktop) {
+      sheet.disable();
+      if (currentId) setCollapsed(false); // entered desktop dock
+    } else {
+      sheet.enable();
+      if (currentId) setSheetState(sheet.snap() === "peek" ? "half" : sheet.snap());
     }
   };
-  head.addEventListener("pointerup", endDrag);
-  head.addEventListener("pointercancel", endDrag);
+  seat(isDesktop());
+  window.matchMedia(DESKTOP_MQ).addEventListener?.("change", (e) => seat(e.matches));
+  // Tap the grabber to toggle half/full — but not as the tail of a drag (the click fires after
+  // pointerup; the helper flags a real drag on the element for exactly this guard).
+  grabEl.onclick = () => {
+    if (panelEl.dataset.justDragged) return;
+    setSheetState(sheet.snap() === "full" ? "half" : "full");
+  };
 
   // Back button closes the panel (one press — switching pins uses replaceState).
   window.addEventListener("popstate", () => {

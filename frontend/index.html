@@ -33,15 +33,13 @@
   <h1 class="sr-only">OpenDrop — map of US clothing donation locations</h1>
   <div id="map" role="application" aria-label="Map of clothing donation locations"></div>
 
-  <!-- Top bar: a FLEX row (brand | search) so the logo and search reflow past each other instead of
-       overlapping at narrow / panel-open widths. The bar itself is click-transparent (pointer-events
-       none) so the empty band never steals map interaction; its children re-enable pointer events.
-       The top-right corner is owned by Leaflet's basemap layers control (position:topright, outside
-       this bar) — the bar reserves room for it via padding-right so the centered search never slides
-       under it. -->
+  <!-- Top bar (z30): the redesign's chrome bar — brand | flex search | action cluster. On desktop
+       (>=1024px) it is a full-width 64px surface the side rails tuck under; on mobile it floats on
+       a gradient scrim with safe-area padding. The bar itself is click-transparent (pointer-events
+       none) so any empty band never steals map interaction; children re-enable pointer events. -->
   <div class="topbar">
-    <!-- Brand mark (icon + wordmark). Wordmark hides at a breakpoint where the search would reach it;
-         the icon-only mark remains so the corner is never empty. -->
+    <!-- Brand mark (icon + wordmark lockup). Crops to the icon third on mobile so the corner is
+         never empty but the search keeps the width. -->
     <div class="brand">
       <picture>
         <source srcset="opendrop-logo.webp" type="image/webp" />
@@ -58,15 +56,31 @@
       <ul id="search-results" class="search-results" role="listbox" aria-label="Search results"></ul>
       <div id="search-live" class="sr-only" role="status" aria-live="polite"></div>
     </div>
+
+    <!-- Action cluster: layers is always here; the legend/theme pair (#util-cluster) lives here on
+         desktop and is relocated by js/chrome.js to a bottom-left FAB stack on mobile. -->
+    <div class="topbar-actions">
+      <button id="layers-btn" class="bar-btn" type="button" aria-label="Map layers" aria-haspopup="true"
+              aria-expanded="false" aria-controls="layers-pop" title="Map layers">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9"
+             stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5 9-5z"></path><path d="M3 13l9 5 9-5"></path></svg>
+      </button>
+      <div id="util-cluster" class="util-cluster in-bar">
+        <button id="legend-btn" class="bar-btn" type="button" aria-label="Location confidence legend"
+                aria-haspopup="true" aria-expanded="false" aria-controls="legend-pop" title="What the colors mean">i</button>
+        <button id="theme-toggle" class="bar-btn theme-toggle" type="button" aria-label="Switch theme" title="Switch theme">☾</button>
+      </div>
+    </div>
   </div>
 
   <div id="map-status" class="map-status" role="status" aria-live="polite" hidden></div>
 
-  <div class="map-ctl-bl">
-    <div class="ctl-row">
-      <button id="list-toggle" class="list-toggle" type="button" aria-expanded="false" aria-controls="list-panel" aria-label="List locations in view — open and browse donation spots" title="List locations in view">☰ Location list</button>
-      <button id="theme-toggle" class="icon-btn theme-toggle" type="button" aria-label="Switch theme" title="Switch theme">☾</button>
-    </div>
+  <!-- Popovers (z40) + shared click-away backdrop (z39). The legend card that used to live
+       permanently bottom-left is now the "i" popover; layers-pop rows are built by js/chrome.js
+       from the basemap registry. -->
+  <div id="pop-backdrop" class="pop-backdrop" hidden></div>
+  <div id="layers-pop" class="map-pop" role="menu" aria-label="Map layers" hidden></div>
+  <div id="legend-pop" class="map-pop" role="dialog" aria-label="Location confidence legend" hidden>
     <div id="legend" class="legend">
       <strong>Location Confidence</strong>
       <div class="conf-scale" role="img" aria-label="Marker confidence colors: red is low, orange is medium, green is high">
@@ -119,6 +133,8 @@
   </section>
 
   <aside id="list-panel" class="list-panel" aria-label="Locations in view" aria-hidden="true">
+    <!-- Mobile sheet drag handle (hidden on the desktop rail) — pointer events wired in list.js. -->
+    <button class="list-grab sheet-grab" type="button" aria-label="Expand or collapse the list" hidden></button>
     <div class="list-head">
       <label for="list-filter">Show</label>
       <select id="list-filter" aria-label="Filter locations by category"></select>
