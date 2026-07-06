@@ -29,6 +29,7 @@ export function initList(m, onChange) {
   const listTab = document.getElementById("list-tab");
   const grab = panel.querySelector(".list-grab");
   const results = document.getElementById("list-results");
+  const pill = document.getElementById("list-pill");
 
   filterSel.innerHTML = Object.entries(FILTERS)
     .map(([k, v]) => `<option value="${k}">${v.label}</option>`)
@@ -39,10 +40,20 @@ export function initList(m, onChange) {
     onFilterChange && onFilterChange();
   });
 
-  // The list is ALWAYS present in the redesign — a left rail on desktop (collapsible behind the
-  // edge tab), the resting bottom sheet on mobile. The old open/close toggle button is gone.
-  panel.classList.add("open");
-  panel.setAttribute("aria-hidden", "false");
+  // Two lives (the summonable-sheet model): desktop = an ALWAYS-present left rail (collapsible
+  // behind the edge tab); mobile = NO sheet at rest — a clean map with a bottom-center "List"
+  // pill that summons the sheet at half, and a below-peek drag dismisses it (the pill returns).
+  const mq = window.matchMedia("(min-width: 1024px)");
+  let placeOpen = false; // the place panel supersedes the sheet AND the pill while open
+
+  const setOpen = (open) => {
+    panel.classList.toggle("open", open);
+    panel.setAttribute("aria-hidden", String(!open));
+  };
+  const updatePill = () => {
+    if (!pill) return;
+    pill.hidden = mq.matches || panel.classList.contains("open") || placeOpen;
+  };
 
   // Desktop collapse behind the edge tab (chevron ‹ pushes the rail off the left edge; the
   // .is-collapsed class rotates the glyph in sync with the slide).
@@ -58,22 +69,70 @@ export function initList(m, onChange) {
   listTab.addEventListener("click", () => setCollapsed(!panel.classList.contains("collapsed")));
   // (The edge tab is the ONLY collapse affordance — the old in-header ‹ duplicated it and leaked
   // onto mobile, where its display rule out-cascaded the `hidden` attribute.)
+
+  // Mobile: the shared 3-snap sheet, SUMMONED rather than resting. Only the grab handle drags
+  // (the header holds the filter <select> — dragging from it would fight the control). Dismissal
+  // has three paths, each single-pointer or keyboard (WCAG 2.5.7 needs a non-drag alternative):
+  // a drag ending below peek (ONE swipe — unlike the place sheet's two-stage dismiss), a TAP on
+  // the map outside the sheet, or Escape. Every dismissal hands focus to the returned pill.
+  const dismiss = () => {
+    setOpen(false);
+    panel.style.height = "0px"; // the next summon slides up from the bottom edge
+    updatePill();
+    if (pill && !pill.hidden) { try { pill.focus({ preventScroll: true }); } catch (err) { /* ignore */ } }
+  };
+  sheetApi = makeSheet(panel, [grab], { content: results, onDismiss: () => { dismiss(); } });
+
+  // Escape: desktop collapses the rail; mobile dismisses the summoned sheet.
   panel.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && window.matchMedia("(min-width: 1024px)").matches) setCollapsed(true);
+    if (e.key !== "Escape") return;
+    if (mq.matches) { setCollapsed(true); return; }
+    dismiss();
   });
 
-  // Mobile: the shared 3-snap sheet, resting at peek. Only the grab handle drags (the header
-  // holds the filter <select> — dragging from it would fight the control).
-  sheetApi = makeSheet(panel, [grab], { content: results });
+  // Tapping the map dismisses the summoned sheet (the map-app convention). Leaflet fires "click"
+  // only for a tap, never a pan. Pin taps bubble here too — a MAP-initiated pin selection
+  // dismissing the list is intended; row-initiated selections are DOM clicks and don't bubble,
+  // so picking from the list keeps it for when the place closes.
+  map.on("click", () => {
+    if (!mq.matches && panel.classList.contains("open")) dismiss();
+  });
+
+  // Summoning moves focus INTO the sheet: the pill (the focused element) is about to hide, and
+  // dropping focus to <body> would strand the panel-scoped Escape path above.
+  const summon = () => {
+    setOpen(true);
+    sheetApi.setSnap("half");
+    updatePill();
+    try { filterSel.focus({ preventScroll: true }); } catch (err) { /* ignore */ }
+  };
+  if (pill) pill.addEventListener("click", summon);
+
+  // The place panel announces open/close (see panel.js setHidden) — the pill yields while a
+  // place is up and returns when it closes (unless the list sheet itself is still open under it).
+  document.addEventListener("od:place-toggle", (e) => {
+    placeOpen = !!(e.detail && e.detail.open);
+    updatePill();
+  });
+
   const seat = (desktop) => {
     listTab.hidden = !desktop;
     grab.hidden = desktop;
-    if (desktop) { sheetApi.disable(); }
-    else { setCollapsed(false); sheetApi.enable(); }
+    if (desktop) {
+      sheetApi.disable(); // also clears the inline height the sheet owned
+      setOpen(true);      // the rail is always present on desktop
+    } else {
+      setCollapsed(false);
+      setOpen(false);     // mobile default: clean map, the pill summons
+      sheetApi.enable();
+      panel.style.height = "0px"; // start at the bottom edge (enable() applied a snap height)
+    }
+    updatePill();
   };
-  const mq = window.matchMedia("(min-width: 1024px)");
   seat(mq.matches);
-  mq.addEventListener?.("change", (e) => seat(e.matches));
+  const onMqChange = (e) => seat(e.matches);
+  if (mq.addEventListener) mq.addEventListener("change", onMqChange);
+  else if (mq.addListener) mq.addListener(onMqChange);  // Safari <14
   // Tap the grabber to toggle half/peek (guarded against the click a drag release fires).
   grab.addEventListener("click", () => {
     if (panel.dataset.justDragged) return;

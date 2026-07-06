@@ -258,6 +258,9 @@ function openLocationReport(container, locId, reportBtn) {
 function setHidden(hidden) {
   panelEl.classList.toggle("open", !hidden);
   panelEl.setAttribute("aria-hidden", String(hidden));
+  // Announce open/close for the rest of the chrome (list.js hides the mobile "List" pill while a
+  // place is up) — an event, not an import, so no panel↔list module cycle.
+  document.dispatchEvent(new CustomEvent("od:place-toggle", { detail: { open: !hidden } }));
 }
 
 let sheet = null; // mobile 3-snap bottom-sheet controller (shared helper) — created in initPlacePanel
@@ -309,6 +312,9 @@ export function closePlacePanel() {
   setHidden(true);
   setCollapsed(false);
   tabEl.hidden = true;
+  // Mobile: park the closed sheet at the bottom edge so the next open slides UP from it
+  // (harmless while hidden; desktop's rail CSS owns the box there).
+  if (!isDesktop()) panelEl.style.height = "0px";
   // Pop our history entry unless the browser Back button is what closed us.
   if (histOwned && !closingViaPop) {
     histOwned = false;
@@ -457,10 +463,24 @@ export function initPlacePanel(m) {
   tabEl.onclick = () => setCollapsed(!panelEl.classList.contains("collapsed"));
 
   // Mobile: the panel is a bottom sheet on the shared 3-snap helper (peek/half/full); the grab
-  // handle and the header both drag it. Desktop: the helper is disabled and the rail CSS owns
-  // the box. Re-seat on breakpoint crossings so a panel open across a rotation isn't stranded.
+  // handle and the header both drag it. Peek is the C2 title-only mini-bar (~72px: 26px grab +
+  // the title row — see the mobile .pp-head rules). Dismissal is TWO-STAGE by design: a swipe
+  // below peek from half/full only collapses to the mini-bar; swiping the mini-bar itself away
+  // deselects the pin and closes (one accidental flick can't lose the selection). Desktop: the
+  // helper is disabled and the rail CSS owns the box. Re-seat on breakpoint crossings so a panel
+  // open across a rotation isn't stranded.
   const head = panelEl.querySelector(".pp-head");
-  sheet = makeSheet(panelEl, [grabEl, head], { content: bodyEl });
+  sheet = makeSheet(panelEl, [grabEl, head], {
+    content: bodyEl,
+    // 72px of mini-bar CONTENT (26px grab + the title row) + the sheet's own safe-area
+    // padding-bottom (env() isn't readable from JS; the computed padding is it, resolved) —
+    // otherwise a home-indicator inset eats the title on iPhones.
+    peekPx: () => 72 + (parseFloat(getComputedStyle(panelEl).paddingBottom) || 0),
+    onDismiss: (startSnap) => {
+      if (startSnap === "peek") { closePlacePanel(); return true; }
+      return false; // from half/full: settle at the mini-bar instead
+    },
+  });
   const seat = (desktop) => {
     grabEl.hidden = desktop;
     tabEl.hidden = desktop ? !currentId : true;
@@ -473,12 +493,16 @@ export function initPlacePanel(m) {
     }
   };
   seat(isDesktop());
-  window.matchMedia(DESKTOP_MQ).addEventListener?.("change", (e) => seat(e.matches));
-  // Tap the grabber to toggle half/full — but not as the tail of a drag (the click fires after
-  // pointerup; the helper flags a real drag on the element for exactly this guard).
+  const seatMq = window.matchMedia(DESKTOP_MQ);
+  const onSeatChange = (e) => seat(e.matches);
+  if (seatMq.addEventListener) seatMq.addEventListener("change", onSeatChange);
+  else if (seatMq.addListener) seatMq.addListener(onSeatChange);  // Safari <14
+  // Tap the grabber to step the sheet — mini-bar reopens to half (mirrors the pill's summon
+  // height), half grows to full, full drops back to half. Not as the tail of a drag (the click
+  // fires after pointerup; the helper flags a real drag on the element for exactly this guard).
   grabEl.onclick = () => {
     if (panelEl.dataset.justDragged) return;
-    setSheetState(sheet.snap() === "full" ? "half" : "full");
+    setSheetState(sheet.snap() === "half" ? "full" : "half");
   };
 
   // Back button closes the panel (one press — switching pins uses replaceState).

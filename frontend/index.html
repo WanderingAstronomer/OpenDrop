@@ -148,6 +148,20 @@
             aria-label="Reopen place details" hidden>›</button>
   </section>
 
+  <!-- Mobile-only "List" pill (bottom-center): summons the list sheet at half. Hidden while the
+       list sheet or a place sheet is up, and on desktop (the rail is always present there).
+       Wired in js/list.js. -->
+  <button id="list-pill" class="list-pill" type="button" hidden aria-controls="list-panel">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" aria-hidden="true">
+      <path d="M8.5 6h12M8.5 12h12M8.5 18h12"></path>
+      <circle cx="4" cy="6" r="1.1" fill="currentColor" stroke="none"></circle>
+      <circle cx="4" cy="12" r="1.1" fill="currentColor" stroke="none"></circle>
+      <circle cx="4" cy="18" r="1.1" fill="currentColor" stroke="none"></circle>
+    </svg>
+    List
+  </button>
+
   <aside id="list-panel" class="list-panel" aria-label="Locations in view" aria-hidden="true">
     <!-- Mobile sheet drag handle (hidden on the desktop rail) — pointer events wired in list.js. -->
     <button class="list-grab sheet-grab" type="button" aria-label="Expand or collapse the list" hidden></button>

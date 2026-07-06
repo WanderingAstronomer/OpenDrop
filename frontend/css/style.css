@@ -130,7 +130,11 @@ body { position: relative; }
    Mobile's bar is an auto-height floating row — there --bar-h only feeds the offset consumers
    (popovers, status banner), pinned to the historical 64px. */
 :root { --bar-h: 72px; }
-@media (max-width: 1023px) { :root { --bar-h: 64px; } }
+/* --attr-h: the mobile bottom attribution strip's one-line height (B7) — the FABs and the List
+   pill stack above it. 24px = 10px text at Leaflet's 1.4 line-height + 5px padding each side,
+   meeting WCAG 2.5.8's 24px tap-target minimum (the strip is the expand-credits control).
+   Mobile-only concept; desktop keeps the corner pill. */
+@media (max-width: 1023px) { :root { --bar-h: 64px; --attr-h: 24px; } }
 #map { position: fixed; inset: 0; width: 100dvw; height: 100dvh; z-index: 0; background: var(--map-base); }
 
 /* Screen-reader-only text (page h1, search live region). Both class names resolve to one rule so
@@ -408,6 +412,27 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
   position: fixed; right: 16px; bottom: 16px; z-index: var(--z-ctl);
   display: flex; flex-direction: column; align-items: flex-end; gap: 12px;
 }
+
+/* Bottom-center "List" pill (mobile only): summons the list sheet at half; hidden while any
+   sheet is up (js/list.js owns the hidden attribute). The [hidden] restore is LOAD-BEARING —
+   this rule's display would otherwise out-cascade the attribute (the .list-close lesson).
+   Desktop never shows it: the list rail is always present there. */
+.list-pill {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom) + var(--attr-h, 0px) + 14px);
+  z-index: var(--z-ctl);
+  display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 18px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+  border-radius: var(--r-pill); box-shadow: var(--shadow);
+  font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer;
+}
+.list-pill:hover { background: var(--surface-2); }
+.list-pill:focus-visible { box-shadow: var(--focus), var(--shadow); }
+.list-pill[hidden] { display: none; }
+@media (min-width: 1024px) { .list-pill { display: none; } }
+/* The Add flow's form sits right above the pill's band (and its pin-drag needs the map) — a
+   stray pill tap would bury the draggable pin under the summoned sheet. Yield until it closes. */
+body:has(#submit-panel:not(.hidden)) .list-pill { display: none; }
 
 /* Add button (primary CTA) — 48px per the redesign */
 .add-btn {
@@ -806,10 +831,11 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
   .pp-tab:hover { color: var(--ink); background: var(--surface-2); }
 }
 
-/* Mobile (<1024px): ONE bottom sheet, two modes. Both surfaces are sheet-styled and mutually
-   exclusive — the list sheet is always resting (peek ≈ 13dvh); opening a place hides it and the
-   place sheet takes over at the same dock. Heights are driven by js/sheet.js (3 snaps:
-   peek / half 55dvh / full 92dvh); CSS only supplies the shell. */
+/* Mobile (<1024px): ONE bottom sheet, two modes — SUMMONED, not resting. Default is a clean map
+   (no sheet; the bottom-center "List" pill summons the list at half); tapping a pin supersedes
+   the list with the place sheet at the same dock. Heights are driven by js/sheet.js (3 snaps:
+   peek / half 55dvh / full 92dvh; the place sheet's peek is the ~72px title-only mini-bar, and
+   dragging below peek dismisses); CSS only supplies the shell. */
 @media (max-width: 1023px) {
   .place-panel, .list-panel {
     position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto;
@@ -817,11 +843,12 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
     border: 1px solid var(--border); border-bottom: none; border-radius: 22px 22px 0 0;
     box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.35);
     transform: none; padding-bottom: env(safe-area-inset-bottom);
+    overflow: hidden; /* peek states show only the sheet's top band — clip the rest */
   }
   .place-panel.dragging, .list-panel.dragging { transition: none; }
   /* .open beats the base visibility:hidden regardless of file order (the base rule sits later) */
   .list-panel.open { visibility: visible; }
-  /* one sheet at a time: an open place panel supersedes the resting list sheet */
+  /* one sheet at a time: an open place panel supersedes the list sheet (it returns on close) */
   body:has(.place-panel.open) .list-panel { visibility: hidden; }
   /* drag handles (pointer wiring in sheet.js); the pp-head also drags the place sheet */
   .pp-head { touch-action: none; }
@@ -834,15 +861,24 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
     background: var(--border-2); margin: 12px auto 0;
   }
   .pp-tab, .list-tab { display: none; }
-  /* FABs ride above the resting sheet; the zoom pill yields to pinch on touch layouts.
+  /* The zoom pill yields to pinch on touch layouts.
      (.map-ctl-br prefix is REQUIRED: the base .zoom-ctl rule sits LATER in the file, so a
      bare same-specificity .zoom-ctl here loses the cascade and the pill reappears.) */
   .map-ctl-br .zoom-ctl { display: none; }
-  .map-ctl-br { bottom: calc(env(safe-area-inset-bottom) + max(92px, 13dvh) + 12px); }
+  /* FABs sit just above the bottom attribution strip (an open sheet simply covers them) */
+  .map-ctl-br { bottom: calc(env(safe-area-inset-bottom) + var(--attr-h) + 12px); }
   /* (legend/theme/layers live in the top-right menu rail on all sizes now — no bottom-left FABs) */
-  /* attribution pill sits just above the resting sheet */
-  .leaflet-bottom.leaflet-left { bottom: calc(max(92px, 13dvh) + 8px); }
+  /* B7: the attribution corner spans the full bottom edge (strip styling further down) */
+  .leaflet-bottom.leaflet-left { bottom: 0; left: 0; right: 0; }
   /* welcome greeting is a centered overlay at all sizes now — nothing sheet-specific to do */
+
+  /* C2: the place sheet's peek is a title-only mini-bar — the grab sits flush at the sheet's top
+     in a tighter 26px band (no head top padding), and at peek the title is one ellipsized line;
+     the identity row and body sit below the fold (clipped by the sheet's overflow:hidden). */
+  .pp-head { padding: 0 18px 12px; }
+  .pp-grab { height: 26px; }
+  .pp-grab::before { margin: 10px auto 0; }
+  .place-panel[data-snap="peek"] .pp-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
 
 /* ===== T26: overlay-panel chrome behavior ===== */
@@ -997,8 +1033,22 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
 .leaflet-control-attribution.attr-collapsible.attr-open {
   max-width: min(94vw, 680px); white-space: normal; cursor: default;
 }
+/* B7 (mobile): the collapsed pill becomes a FULL-WIDTH one-line strip pinned to the bottom edge
+   (its corner container is stretched in the mobile layout block) — FABs and the List pill stack
+   above it, an open sheet covers it (attribution stays visible at rest, the map-app standard).
+   Tapping still expands the full credits, which grow UPWARD from the bottom-anchored strip. */
 @media (max-width: 1023px) {
-  .leaflet-control-attribution.attr-collapsible { max-width: 62vw; font-size: 10px; }
+  .leaflet-control-attribution.attr-collapsible {
+    width: 100%; max-width: none; margin: 0; border-radius: 0; text-align: center;
+    font-size: 10px; padding: 5px 10px calc(5px + env(safe-area-inset-bottom)); /* 24px: 2.5.8 */
+  }
+  .leaflet-control-attribution.attr-collapsible.attr-open { max-width: none; }
+  /* Expanded credits wrap to 2-3 lines and grow UP — under the pill/FAB stack, which lives in a
+     HIGHER stacking context (#map is a z-0 context, so nothing inside it can climb above body
+     children). Yield the chrome while the credits are open so every license link is tappable;
+     tapping the strip again collapses it and the chrome returns. */
+  body:has(.leaflet-control-attribution.attr-open) .list-pill,
+  body:has(.leaflet-control-attribution.attr-open) .map-ctl-br { visibility: hidden; }
 }
 
 /* ============================ WELCOME HERO ============================= */
