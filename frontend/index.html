@@ -59,9 +59,9 @@
       <div id="search-live" class="sr-only" role="status" aria-live="polite"></div>
     </div>
 
-    <!-- Menu: a hamburger that drops a vertical icon RAIL (about / legend / theme / layers).
-         Clicking a rail icon opens its menu to the LEFT; theme toggles inline; about re-opens the
-         welcome card. Same on desktop + mobile — wired in js/chrome.js. -->
+    <!-- Actions (about / legend / theme / layers). Desktop: a permanent inline row (no hamburger;
+         js/chrome.js swaps the menu roles for a group). Mobile: a ☰ drops them as a vertical RAIL,
+         popovers opening to its LEFT. Theme toggles inline; about re-opens the welcome card. -->
     <div class="topbar-actions">
       <button id="menu-btn" class="bar-btn" type="button" aria-label="Menu" aria-haspopup="true"
               aria-expanded="false" aria-controls="menu-rail" title="Menu">
@@ -103,6 +103,10 @@
       <div class="legend-row legend-pending">
         <span class="ring-swatch pending" aria-hidden="true"></span>
         <span>Awaiting feedback</span>
+      </div>
+      <div class="legend-row legend-you">
+        <span class="you-swatch" aria-hidden="true"></span>
+        <span>You are here</span>
       </div>
       <div class="legend-links">
         <a href="/privacy.html">Privacy</a> ·
@@ -151,7 +155,6 @@
       <label for="list-filter">Show</label>
       <select id="list-filter" aria-label="Filter locations by category"></select>
       <span id="list-count" class="list-count" aria-live="polite" aria-atomic="true"></span>
-      <button id="list-close" class="list-close" type="button" aria-label="Close list">✕</button>
     </div>
     <ul id="list-results" class="list-results" aria-live="polite" aria-relevant="additions text" aria-label="Locations in view"></ul>
     <!-- Collapse tab: a CHILD of the drawer (rides its transform in lockstep). Sticks out the right edge. -->

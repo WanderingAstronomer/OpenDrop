@@ -125,6 +125,12 @@ body { position: relative; }
    z-scale:  map 0  <  map controls / FABs 10  <  rails & sheets 20  <  top bar 30  <  popovers 40
    (modals/toasts keep their historical 1500+ values -- always above every band). */
 :root { --z-ctl: 10; --z-rail: 20; --z-bar: 30; --z-pop: 40; }
+/* Single source of truth for the bar height: the bar itself, the rails' top edge, the popover
+   anchor, and the status banner all derive from --bar-h so nothing drifts when it changes.
+   Mobile's bar is an auto-height floating row — there --bar-h only feeds the offset consumers
+   (popovers, status banner), pinned to the historical 64px. */
+:root { --bar-h: 72px; }
+@media (max-width: 1023px) { :root { --bar-h: 64px; } }
 #map { position: fixed; inset: 0; width: 100dvw; height: 100dvh; z-index: 0; background: var(--map-base); }
 
 /* Screen-reader-only text (page h1, search live region). Both class names resolve to one rule so
@@ -164,8 +170,8 @@ body { position: relative; }
      so it lives in the MOBILE COMPAT section at the end of the file.) */
   .chip, .rate-clear, .linklike { min-height: 44px; display: inline-flex; align-items: center; }
 }
-.sheet-x, .list-close, .modal-close { width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border-radius: 8px; }
-.sheet-x:hover, .list-close:hover, .modal-close:hover { color: var(--ink); background: var(--surface-2); }
+.sheet-x, .modal-close { width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border-radius: 8px; }
+.sheet-x:hover, .modal-close:hover { color: var(--ink); background: var(--surface-2); }
 .sheet-gps input, .ph-low input { width: 20px; height: 20px; accent-color: var(--accent); }
 .seg button:focus-visible { box-shadow: var(--focus); }
 .seg button.on:focus-visible, .seg button.chosen:focus-visible { box-shadow: var(--focus), var(--shadow-sm); }
@@ -211,7 +217,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 /* Keyboard focus rings for the chrome buttons: their box-shadow declarations out-cascade the
    global :focus-visible rule, so restore the ring explicitly (ring stacked over the elevation). */
 .locate-btn:focus-visible, .add-btn:focus-visible, .bar-btn:focus-visible,
-.zoom-btn:focus-visible, .list-close:focus-visible { box-shadow: var(--focus), var(--shadow); }
+.zoom-btn:focus-visible { box-shadow: var(--focus), var(--shadow); }
 
 /* Phones: the zoomed submit panel's content box would drop below Cloudflare Turnstile's hard
    300px minimum width and clip the widget in the Add flow — un-zoom it there. */
@@ -228,8 +234,12 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
    Outside-press close is wired in js/chrome.js (no blocking backdrop layer: a full-screen
    click-away div stacked above the top bar and swallowed the rail's own buttons). */
 /* Popovers open to the LEFT of the menu rail (which is ~44px wide at the right gutter). */
+/* z-index 1450, NOT var(--z-pop): the popovers are transient (outside-press dismisses them) and
+   must also clear the overlay panels on the historical z scale — list 1300 / place 1350 — or a
+   popover opened while a place is docked renders invisibly UNDER the panel. 1450 stays below the
+   pin sheet (1600), welcome (1600), photo modal (2000), and toasts (2200). */
 .map-pop {
-  position: fixed; top: calc(env(safe-area-inset-top) + 64px); right: 66px; z-index: var(--z-pop);
+  position: fixed; top: calc(env(safe-area-inset-top) + var(--bar-h)); right: 66px; z-index: 1450;
   width: 236px; padding: 8px; background: var(--surface); color: var(--ink);
   border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
   animation: rail-drop .16s ease-out;
@@ -279,6 +289,37 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .ring-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 50%; }
 .ring-swatch.pending { background: transparent; border: 2px solid #a855f7; box-shadow: 0 0 3px rgba(168, 85, 247, .7); }
 
+/* Legend swatch for the you-are-here dot — same fixed blue + white ring as the map marker. */
+.legend-you { margin-top: 5px; }
+.you-swatch {
+  display: inline-block; width: 11px; height: 11px; border-radius: 50%;
+  background: #1a73e8; border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .2), 0 0 3px rgba(26, 115, 232, .6);
+}
+
+/* "You are here" map marker (locate.js divIcon): the classic blue dot in a white ring with a soft
+   pulsing halo — deliberately NOT a circle marker, so it can't be mistaken for a data pin. Fixed
+   blue in both themes (like the pin palette, it must survive basemap/theme swaps unchanged). */
+.you-dot {
+  position: relative; display: block; width: 18px; height: 18px; border-radius: 50%;
+  background: #1a73e8; border: 3px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .25), 0 1px 4px rgba(0, 0, 0, .4);
+}
+/* z-index:-1 tucks the halo BEHIND the dot (the dot has no stacking context of its own, so the
+   pseudo settles between the dot and the map pane). */
+.you-dot::after {
+  content: ""; position: absolute; inset: -3px; border-radius: 50%; z-index: -1;
+  background: rgba(26, 115, 232, 0.35);
+  animation: you-pulse 2.2s ease-out infinite;
+}
+@keyframes you-pulse {
+  0% { transform: scale(1); opacity: .9; }
+  70%, 100% { transform: scale(2.6); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .you-dot::after { animation: none; transform: scale(1.6); opacity: .35; }
+}
+
 /* Top-bar action buttons (layers / legend "i" / theme) — 44px targets per the redesign. On mobile
    the legend+theme pair (#util-cluster) is relocated to a bottom-left FAB stack by js/chrome.js. */
 .bar-btn {
@@ -300,15 +341,28 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .menu-rail[hidden] { display: none; }
 .rail-btn { box-shadow: var(--shadow); }
 @keyframes rail-drop { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+/* Desktop: NO hamburger — the rail is a permanent inline row of buttons in the bar (js/chrome.js
+   un-hides it and swaps the menu roles for a plain group). Popovers then anchor below the bar's
+   right edge instead of left of a dropdown rail. Mobile keeps the ☰ → vertical rail. */
+@media (min-width: 1024px) {
+  #menu-btn { display: none; }
+  .menu-rail { position: static; flex-direction: row; animation: none; }
+  .rail-btn { box-shadow: none; }
+  /* The generic chrome focus restore stacks the heavy dropdown shadow back onto these flat
+     inline buttons — ring only here (this rule is later at equal specificity, so it wins). */
+  .rail-btn:focus-visible { box-shadow: var(--focus); }
+  .map-pop { top: calc(env(safe-area-inset-top) + var(--bar-h) + 8px); right: 16px; }
+}
 
 /* ---- TOP BAR (z30) -----------------------------------------------------------------------------
    The redesign's chrome bar: brand | flex search | action cluster. Desktop (>=1024px): a full-width
-   64px surface the side rails tuck under (rails start at top:64). Mobile: a transparent floating
-   row with safe-area padding. Flex means nothing can overlap — the search shrinks, never
-   slides. pointer-events:none keeps any empty band click-through; children re-enable events. */
+   var(--bar-h) surface the side rails tuck under (rails start at top:var(--bar-h)). Mobile: a
+   transparent floating row with safe-area padding. Flex means nothing can overlap — the search
+   shrinks, never slides. pointer-events:none keeps any empty band click-through; children
+   re-enable events. */
 .topbar {
   position: fixed; top: 0; left: 0; right: 0; z-index: var(--z-bar);
-  display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 16px;
+  display: flex; align-items: center; gap: 12px; height: var(--bar-h); padding: 0 16px;
   background: color-mix(in srgb, var(--surface) 96%, transparent);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
@@ -421,6 +475,16 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
   font-size: 14px; box-shadow: var(--shadow); background: var(--surface); color: var(--ink);
 }
 .search input:focus { border-color: var(--accent); box-shadow: var(--focus), var(--shadow); }
+/* DESKTOP ONLY: a lighter field surface (one step off the bar, both themes) with a plain border —
+   the full-surface fill + heavy drop shadow read as a dark inset slab against the bar. Mobile
+   keeps that heavier treatment: there the bar is transparent, so the field floats directly on map
+   tiles and the full-surface fill + shadow are what delineate it. The placeholder darkens one
+   step (--ink-2) to hold WCAG AA contrast on the tinted field. */
+@media (min-width: 1024px) {
+  .search input { background: var(--surface-2); border-color: var(--border-2); box-shadow: var(--shadow-sm); }
+  .search input:focus { border-color: var(--accent); box-shadow: var(--focus), var(--shadow-sm); }
+  .search input::placeholder { color: var(--ink-2); }
+}
 .search-results {
   list-style: none; margin: 6px 0 0; padding: 5px; background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-ctl); box-shadow: var(--shadow); max-height: 50vh; overflow-y: auto;
@@ -434,7 +498,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 
 /* Loading / empty / error banner */
 .map-status {
-  position: fixed; top: calc(env(safe-area-inset-top) + 76px); left: 50%; transform: translateX(-50%); z-index: var(--z-bar); /* just under the 64px bar */
+  position: fixed; top: calc(env(safe-area-inset-top) + var(--bar-h) + 12px); left: 50%; transform: translateX(-50%); z-index: var(--z-bar); /* just under the bar */
   background: rgba(16, 24, 40, 0.92); color: #fff; padding: 9px 16px; border-radius: var(--r-pill);
   font-size: 13px; box-shadow: var(--shadow); max-width: calc(80vw / 1.25); text-align: center;
 }
@@ -714,12 +778,12 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
 /* selected-marker ring (SVG path stroke takes var() via CSS rules, unlike presentation attrs) */
 .marker-selected { stroke: var(--accent) !important; stroke-width: 3.5 !important; }
 
-/* desktop dock — RIGHT rail below the 64px top bar (list rail on the left; both can be open). */
+/* desktop dock — RIGHT rail below the top bar (list rail on the left; both can be open). */
 @media (min-width: 1024px) {
   /* --pp-w: the rail's rendered width, reused by the tab so it slides EXACTLY the panel's distance. */
   .place-panel { --pp-w: min(400px, 40vw); }
   .place-panel {
-    top: 64px; right: 0; bottom: 0; width: var(--pp-w);
+    top: var(--bar-h); right: 0; bottom: 0; width: var(--pp-w);
     border-left: 1px solid var(--border); box-shadow: var(--shadow);
     transform: translateX(100%);
   }
@@ -790,7 +854,7 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
 
 /* Desktop chrome yields to the rails: the bottom-right stack shifts left of the open detail rail,
    and the attribution pill shifts right of the open list rail. The top bar spans full width ABOVE
-   both rails (they start at top:64), so it never needs to reserve anything. */
+   both rails (they start at top:var(--bar-h)), so it never needs to reserve anything. */
 @media (min-width: 1024px) {
   .map-ctl-br { transition: right .2s ease; }
   body:has(.place-panel.open:not(.collapsed)) .map-ctl-br { right: calc(min(400px, 40vw) + 16px); }
@@ -799,8 +863,6 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
 }
 
 /* ============================ LIST PANEL ================================ */
-.list-close { margin-left: 4px; background: none; border: none; font-size: 16px; cursor: pointer; color: var(--ink-2); padding: 2px 6px; border-radius: 6px; }
-.list-close:hover { color: var(--ink); background: var(--surface-3); }
 .list-panel {
   position: fixed; z-index: var(--z-rail); background: var(--surface);
   display: flex; flex-direction: column; visibility: hidden;
@@ -811,9 +873,9 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
 .list-chev { display: inline-block; transition: transform .2s ease; }
 .list-tab.is-collapsed .list-chev { transform: rotate(180deg); }
 @media (min-width: 1024px) {
-  /* Left rail: below the 64px bar, 340px wide (redesign), slides out behind the child tab. */
+  /* Left rail: below the bar, 340px wide (redesign), slides out behind the child tab. */
   .list-panel {
-    top: 64px; left: 0; bottom: 0; width: 340px;
+    top: var(--bar-h); left: 0; bottom: 0; width: 340px;
     box-shadow: var(--shadow); border-right: 1px solid var(--border);
     transform: translateX(-100%);
   }
@@ -1152,10 +1214,11 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
    equal specificity, so the cascade resolves them by source order — putting them here is what makes
    them win, without resorting to !important or id-inflated selectors. */
 
-/* iOS Safari auto-zooms the page when a focused field is < 16px. The search input is 14px and its
-   wrapper is un-zoomed at <=900px, so bump the input itself to 16px there. */
+/* iOS Safari auto-zooms the page when a focused field is < 16px. The search input is 14/15px, so
+   bump it to 16px on phones. The .search .search-field prefix is REQUIRED: the 15px rule near the
+   top bar styles carries (0,2,1) specificity, which a bare `.search input` here can never beat. */
 @media (max-width: 900px) {
-  .search input { font-size: 16px; }
+  .search .search-field input { font-size: 16px; }
 }
 
 @media (max-width: 480px) {
@@ -1178,4 +1241,17 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
   .map-status, .toast-host { zoom: 1; }
   .map-status { font-size: 12.5px; max-width: 85vw; }
   .toast { font-size: 12.5px; max-width: 85vw; }
+}
+
+/* Mobile chrome runs smaller (browser chrome already eats the vertical space; desktop scale is
+   deliberately untouched): Add CTA + locate hold the 44px WCAG 2.5.5 (AAA) floor; the square bar
+   buttons + logo card drop to 40px — a deliberate AAA→AA trade (WCAG 2.5.8's minimum is 24px)
+   for a lighter bar. Lives here (late) so the base component rules and the early mobile .brand
+   card rule can't out-cascade it. */
+@media (max-width: 1023px) {
+  .add-btn { height: 44px; padding: 0 16px; font-size: 14px; }
+  .locate-btn { width: 44px; height: 44px; }
+  .locate-btn svg { width: 20px; height: 20px; }
+  .bar-btn { width: 40px; height: 40px; border-radius: 10px; }
+  .brand { width: 40px; height: 40px; padding: 5px; border-radius: 10px; }
 }

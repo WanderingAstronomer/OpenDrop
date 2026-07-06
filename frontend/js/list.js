@@ -26,7 +26,6 @@ export function initList(m, onChange) {
   onFilterChange = onChange;
   const panel = document.getElementById("list-panel");
   const filterSel = document.getElementById("list-filter");
-  const closeBtn = document.getElementById("list-close");
   const listTab = document.getElementById("list-tab");
   const grab = panel.querySelector(".list-grab");
   const results = document.getElementById("list-results");
@@ -57,11 +56,8 @@ export function initList(m, onChange) {
     listTab.title = label;
   };
   listTab.addEventListener("click", () => setCollapsed(!panel.classList.contains("collapsed")));
-  // The header button is the in-rail collapse affordance (design: ‹ in the rail header).
-  closeBtn.innerHTML = "‹";
-  closeBtn.setAttribute("aria-label", "Collapse list");
-  closeBtn.title = "Collapse list";
-  closeBtn.addEventListener("click", () => setCollapsed(true));
+  // (The edge tab is the ONLY collapse affordance — the old in-header ‹ duplicated it and leaked
+  // onto mobile, where its display rule out-cascaded the `hidden` attribute.)
   panel.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && window.matchMedia("(min-width: 1024px)").matches) setCollapsed(true);
   });
@@ -72,7 +68,6 @@ export function initList(m, onChange) {
   const seat = (desktop) => {
     listTab.hidden = !desktop;
     grab.hidden = desktop;
-    closeBtn.hidden = !desktop;
     if (desktop) { sheetApi.disable(); }
     else { setCollapsed(false); sheetApi.enable(); }
   };

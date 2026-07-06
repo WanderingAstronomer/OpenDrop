@@ -1,7 +1,8 @@
-// Top-right MENU wiring: a hamburger that drops a vertical icon RAIL (about / legend / theme /
-// layers). Clicking a rail icon with a popover opens it to the LEFT of the rail; the theme icon
-// toggles the map theme inline (wired in theme.js); "about" re-opens the welcome card. Same on
-// desktop and mobile. z-scale lives in style.css (popovers = 40).
+// Top-bar action wiring, two modes for one set of buttons (about / legend / theme / layers):
+// desktop (>=1024px) shows them as a permanent inline row in the bar (no hamburger; popovers drop
+// below the bar); mobile collapses them behind a ☰ that drops a vertical icon RAIL, popovers
+// opening to the rail's LEFT. The theme icon toggles inline (wired in theme.js); "about" re-opens
+// the welcome card. z-scale lives in style.css (popovers = 40).
 import { basemaps } from "./map.js";
 import { maybeShowWelcomeHero } from "./potd.js";
 
@@ -28,11 +29,44 @@ export function initChrome() {
     if (p) p.hidden = true;
     if (b) b.setAttribute("aria-expanded", "false");
   });
+  // Desktop keeps the rail permanently visible (an inline row in the bar), so "close" only ever
+  // means the popovers there; on mobile it also folds the rail back behind the ☰.
+  const desktopMq = window.matchMedia("(min-width: 1024px)");
   const closeAll = () => {
     closePops();
-    rail.hidden = true;
-    menuBtn.setAttribute("aria-expanded", "false");
+    if (!desktopMq.matches) {
+      rail.hidden = true;
+      menuBtn.setAttribute("aria-expanded", "false");
+    }
   };
+
+  // Mode seat: desktop = permanent toolbar (menu roles off — role="menu" implies a popup, which
+  // it no longer is); mobile = the ☰-controlled menu rail, hidden at rest.
+  const railBtns = Array.from(rail.querySelectorAll(".rail-btn"));
+  const seatMode = (desktop) => {
+    // Captured BEFORE anything hides: crossing the breakpoint mid-session (browser zoom, tablet
+    // rotation) must not silently drop keyboard focus to <body> when the focused element hides.
+    const focused = document.activeElement;
+    const focusLoses = focused === menuBtn || rail.contains(focused)
+      || pops.some(([, p]) => p && p.contains(focused));
+    closePops();
+    if (desktop) {
+      rail.hidden = false;
+      rail.setAttribute("role", "group");
+      railBtns.forEach((b) => b.removeAttribute("role"));
+      if (focusLoses && railBtns[0]) railBtns[0].focus();  // the ☰ goes display:none
+    } else {
+      rail.hidden = true;
+      rail.setAttribute("role", "menu");
+      railBtns.forEach((b) => b.setAttribute("role", "menuitem"));
+      menuBtn.setAttribute("aria-expanded", "false");
+      if (focusLoses) menuBtn.focus();  // the rail (and any popover) just hid
+    }
+  };
+  seatMode(desktopMq.matches);
+  const onMqChange = (e) => seatMode(e.matches);
+  if (desktopMq.addEventListener) desktopMq.addEventListener("change", onMqChange);
+  else if (desktopMq.addListener) desktopMq.addListener(onMqChange);  // Safari <14
 
   menuBtn.addEventListener("click", () => {
     if (rail.hidden) {
@@ -48,7 +82,8 @@ export function initChrome() {
   // outside the menu/rail/popovers closes them WITHOUT consuming the press, so the same touch that
   // dismisses the menu can start a map drag.
   document.addEventListener("pointerdown", (e) => {
-    if (rail.hidden && pops.every(([, p]) => !p || p.hidden)) return;
+    const railOpenMobile = !desktopMq.matches && !rail.hidden;
+    if (!railOpenMobile && pops.every(([, p]) => !p || p.hidden)) return;
     const inside = [menuBtn, rail, layersPop, legendPop]
       .some((el) => el && el.contains(e.target));
     if (!inside) closeAll();

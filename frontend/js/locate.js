@@ -52,9 +52,24 @@ export function initLocateButton(map) {
       return;
     }
     if (youAreHere) map.removeLayer(youAreHere);
-    youAreHere = L.circleMarker(e.latlng, {
-      radius: 8, color: "#2b6cb0", weight: 3, fillColor: "#4a90d9", fillOpacity: 0.6,
-    }).addTo(map).bindTooltip("You are here");
+    // The classic blue you-are-here dot: white ring + soft pulsing halo (styled in style.css;
+    // pulse respects prefers-reduced-motion there). A divIcon, NOT a circleMarker — data pins are
+    // circle markers, and this must read as a different kind of thing. The marker pane also sits
+    // above the pins' overlay pane, which is why the dot is deliberately INERT: interactive:false
+    // keeps it (and its oversized animated halo) out of hit-testing so it can never swallow a tap
+    // meant for a pin beneath it, and keyboard:false keeps it out of the tab order (a divIcon
+    // ignores alt, so it would surface to screen readers as a nameless do-nothing "button").
+    // The legend's "You are here" row is the label.
+    youAreHere = L.marker(e.latlng, {
+      icon: L.divIcon({
+        className: "you-marker",
+        html: '<span class="you-dot"></span>',
+        iconSize: [18, 18],
+        iconAnchor: [9, 9],
+      }),
+      interactive: false,
+      keyboard: false,
+    }).addTo(map);
     map.setView(e.latlng, Math.max(map.getZoom(), 15), { animate: !prefersReducedMotion() });
   });
 
