@@ -421,12 +421,12 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
   display: flex; flex-direction: column; align-items: flex-end; gap: 12px;
 }
 
-/* Bottom-center "List" pill (mobile only): summons the list sheet at half; hidden while any
+/* Bottom-LEFT "List" pill (mobile only): summons the list sheet at half; hidden while any
    sheet is up (js/list.js owns the hidden attribute). The [hidden] restore is LOAD-BEARING —
    this rule's display would otherwise out-cascade the attribute (the .list-close lesson).
    Desktop never shows it: the list rail is always present there. */
 .list-pill {
-  position: fixed; left: 50%; transform: translateX(-50%);
+  position: fixed; left: calc(env(safe-area-inset-left) + 14px);
   bottom: calc(env(safe-area-inset-bottom) + var(--attr-h, 0px) + 14px);
   z-index: var(--z-ctl);
   display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 18px;
