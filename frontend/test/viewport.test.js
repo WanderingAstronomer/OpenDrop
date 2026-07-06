@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 
 import {
   sanitizeBbox, expandBbox, bboxIntersects, filterFeaturesToBbox, inUSCoverage,
-  bubbleSize, BUBBLE_MAX_PX, formatCount, US_DATA_ENVELOPE, prefersReducedMotion, computeDiff,
+  bubbleSize, BUBBLE_MAX_PX, BUBBLE_MAX_PX_MOBILE, formatCount, US_DATA_ENVELOPE, prefersReducedMotion,
+  computeDiff,
 } from "../js/viewport.js";
 
 // --- sanitizeBbox ---------------------------------------------------------------------------
@@ -142,6 +143,16 @@ test("bubbleSize is monotonic non-decreasing in count", () => {
 test("bubbleSize hits the cap by the thousands and stays there", () => {
   assert.equal(bubbleSize(2000), BUBBLE_MAX_PX);
   assert.equal(bubbleSize(50000), BUBBLE_MAX_PX);
+});
+
+test("bubbleSize is smaller on mobile and capped tighter", () => {
+  // A narrow phone can't carry desktop-sized bubbles without overlap; the mobile variant floors and
+  // caps lower so wide-zoom views stay legible.
+  for (const n of [1, 50, 5000, 500000]) {
+    assert.ok(bubbleSize(n, true) < bubbleSize(n, false), `mobile size for ${n} must be smaller`);
+  }
+  assert.equal(bubbleSize(500000, true), BUBBLE_MAX_PX_MOBILE);
+  assert.ok(bubbleSize(0, true) >= 18, "smallest mobile bubble stays tappable");
 });
 
 // --- label formatting ---------------------------------------------------------------------------

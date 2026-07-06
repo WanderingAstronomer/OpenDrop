@@ -100,12 +100,17 @@ export function filterFeaturesToBbox(features, [w, s, e, n]) {
   });
 }
 
-// Cluster-bubble diameter (px) from its count. Grows with log(count) and is CAPPED at BUBBLE_MAX_PX,
-// kept at/below Supercluster's cluster radius (markers.js SC_OPTS) so adjacent cluster bubbles stay
-// clear of one another. Trimmed ~12% from the earlier cap-64 that touched its neighbours.
+// Cluster-bubble diameter (px) from its count. Grows with log(count) and is CAPPED below the cluster
+// radius (markers.js) so adjacent bubbles stay clear. MOBILE gets a smaller floor + cap so a narrow
+// phone at wide zoom isn't overwhelmed by big overlapping circles (the desktop map has room for the
+// larger ones).
 export const BUBBLE_MAX_PX = 56;
-export function bubbleSize(count) {
-  return Math.round(Math.min(BUBBLE_MAX_PX, 30 + Math.log2((count || 0) + 1) * 3.6));
+export const BUBBLE_MAX_PX_MOBILE = 38;
+export function bubbleSize(count, mobile = false) {
+  const min = mobile ? 20 : 30;
+  const max = mobile ? BUBBLE_MAX_PX_MOBILE : BUBBLE_MAX_PX;
+  const growth = mobile ? 2.4 : 3.6;
+  return Math.round(Math.min(max, min + Math.log2((count || 0) + 1) * growth));
 }
 
 // Compact bubble labels: 999 -> "999", 1500 -> "1.5k", 16204 -> "16k".

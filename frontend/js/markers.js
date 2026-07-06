@@ -1,7 +1,7 @@
 import { bucketColor } from "./confidence.js";
 import { openPlacePanel, panelOnceClose } from "./panel.js";
 import { onThemeChange } from "./theme.js";
-import { bubbleSize, computeDiff, expandBbox, formatCount, prefersReducedMotion } from "./viewport.js";
+import { bubbleSize, computeDiff, expandBbox, formatCount, prefersReducedMotion, sanitizeBbox } from "./viewport.js";
 
 // ONE clustering engine: Mapbox Supercluster (vendored UMD -> global `Supercluster`), client-side.
 // The whole active set is loaded once (main.js) and clustered per view here: clusters sit at the
@@ -17,18 +17,23 @@ let clusterLayer = null; // cluster bubbles (DOM divIcons)
 let pointLayer = null;   // individual pins (canvas circleMarkers; svg for pending)
 let canvasRenderer = null;
 let svgRenderer = null;
+let loadedFeatures = []; // the last feature set handed to loadPoints — kept so a breakpoint change
+                         // (mobile<->desktop) can rebuild the index at the new cluster radius.
 
 // id -> the live point circleMarker currently drawn, so consecutive renders DIFF instead of rebuild
 // (a pan reuses survivors untouched) and the selection ring can be re-found by id after a rebuild.
 const idMap = new Map();
 let selectedId = null;
 
-// Supercluster tuning. radius 60px: a bit coarser than a stock 40px so dense metros collapse into
-// fewer, cleaner bubbles (the "too many notes" report) and adjacent bubbles — capped at 56px
-// (BUBBLE_MAX_PX) — stay clear of each other; still finer than markercluster's 80px default. maxZoom
-// 16 = clusters fully break into individual pins at street level; minPoints 2 = never bubble one pin.
-const SC_OPTS = { radius: 60, maxZoom: 16, minPoints: 2 };
+// Supercluster tuning. maxZoom 16 = clusters fully break into individual pins at street level;
+// minPoints 2 = never bubble a single pin. The cluster radius is COARSER on a narrow phone (80px vs
+// the desktop 60px) so a wide-zoom mobile view collapses into fewer, well-separated bubbles instead
+// of an overlapping sprawl — paired with the smaller mobile bubble diameters (viewport.bubbleSize).
 const SC_MAX_ZOOM = 16;
+const MOBILE_MQ = (typeof window !== "undefined" && window.matchMedia)
+  ? window.matchMedia("(max-width: 1023px)") : null;
+const isMobile = () => !!(MOBILE_MQ && MOBILE_MQ.matches);
+const scOpts = () => ({ radius: isMobile() ? 80 : 60, maxZoom: SC_MAX_ZOOM, minPoints: 2 });
 // Cluster/paint a slightly larger box than the viewport so pins just off the edge exist for short
 // pans (matches the canvas renderer's padding); the list stays honest to the exact viewport (main.js).
 const RENDER_MARGIN = 1.4;
@@ -45,14 +50,30 @@ export function initMarkers(m) {
   // A theme swap changes --accent; the canvas won't repaint the selected ring on its own, so re-style
   // the live selection when the theme flips.
   onThemeChange(() => { const m2 = idMap.get(selectedId); if (m2) m2.setStyle({ color: accentHex(), weight: 3.5 }); });
+  // Crossing the mobile/desktop breakpoint changes the cluster radius, so rebuild the index and
+  // repaint (bubble DIAMETER already adapts per-render via bubbleSize). Rare — a rotate or a resize.
+  if (MOBILE_MQ) {
+    const onBp = () => { if (loadedFeatures.length) { loadPoints(loadedFeatures); rerenderCurrent(); } };
+    if (MOBILE_MQ.addEventListener) MOBILE_MQ.addEventListener("change", onBp);
+    else if (MOBILE_MQ.addListener) MOBILE_MQ.addListener(onBp); // Safari <14
+  }
+}
+
+// Repaint for the map's CURRENT bounds (used by the breakpoint rebuild; the normal path is main.js
+// calling renderView on moveend).
+function rerenderCurrent() {
+  const b = map.getBounds();
+  renderView(sanitizeBbox({ west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() }),
+    map.getZoom());
 }
 
 // (Re)build the clustering index from a point-feature array. Called once after the initial load and
 // again when the type filter changes the visible set — load() is a fresh kdbush build, a few ms for
 // the whole US set, so re-filtering is instant with no server hit. Does NOT paint; the caller renders.
 export function loadPoints(features) {
+  loadedFeatures = features || [];
   const SC = window.Supercluster;
-  index = SC ? new SC(SC_OPTS).load(features || []) : null;
+  index = SC ? new SC(scOpts()).load(loadedFeatures) : null;
 }
 
 // --- selection ring (canvas-safe) --------------------------------------------------------------
@@ -104,8 +125,8 @@ function makePointMarker(f) {
 // Build (but do NOT add) a bubble marker. Diameter scales with log(count) (bubbleSize, capped below
 // BIN_PX so neighbours never touch); the label is pre-formatted (formatCount). The caller batches the
 // returned markers into clusterLayer in one pass.
-function makeBubble(lat, lon, count, label, onClick) {
-  const size = bubbleSize(count);
+function makeBubble(lat, lon, count, label, onClick, mobile) {
+  const size = bubbleSize(count, mobile);
   const icon = L.divIcon({
     html: `<div class="odc-cluster" style="width:${size}px;height:${size}px">${label}</div>`,
     className: "",
@@ -129,6 +150,7 @@ export function renderView(bbox, zoom) {
   }
   const z = Math.min(Math.floor(zoom), SC_MAX_ZOOM); // Supercluster wants an int zoom; map uses 0.25 steps
   const cells = index.getClusters(expandBbox(bbox, RENDER_MARGIN), z);
+  const mob = isMobile(); // smaller bubbles on a narrow phone
 
   // Cluster bubbles: full rebuild (cheap — a few hundred DOM divIcons at most).
   clusterLayer.clearLayers();
@@ -144,7 +166,7 @@ export function renderView(bbox, zoom) {
         // never zoom OUT (a dense cluster's expansion zoom can equal the current zoom).
         const ez = Math.min(index.getClusterExpansionZoom(cid), SC_MAX_ZOOM);
         map.flyTo([lat, lon], Math.max(ez, map.getZoom() + 0.5), { animate: !prefersReducedMotion() });
-      }));
+      }, mob));
     } else {
       points.push(c); // an unclustered leaf: getClusters returns the ORIGINAL point feature
     }

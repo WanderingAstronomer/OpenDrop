@@ -539,15 +539,18 @@ body:has(#submit-panel:not(.hidden)) .list-pill { display: none; }
 
 /* Cluster icon */
 .odc-cluster {
+  box-sizing: border-box; /* the inline width/height is the WHOLE bubble, border included (exact size) */
   display: flex; align-items: center; justify-content: center; border-radius: 50%;
   background: var(--brand); color: #fff; font-weight: 700; font-size: 14px;
   border: 2px solid #ffffff; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
   contain: layout style;
 }
 .odc-cluster:hover { background: color-mix(in srgb, var(--brand) 88%, white); }
-/* National-view AK / HI / CONUS totals — bolder than ordinary grid bubbles */
-.odc-cluster.odc-region { background: var(--accent); font-size: 16px; font-weight: 800; }
-.odc-cluster.odc-region:hover { background: color-mix(in srgb, var(--accent) 88%, white); }
+/* Smaller labels + a thinner ring on a narrow phone so the shrunk mobile bubbles
+   (js/viewport.bubbleSize) stay legible without overwhelming the map. */
+@media (max-width: 1023px) {
+  .odc-cluster { font-size: 12px; border-width: 1.5px; }
+}
 
 /* A pin with an OPEN community proposal (pin move / detail change) awaiting confirmations —
    a gentle stroke pulse so contributors can spot spots that need a vote. */
