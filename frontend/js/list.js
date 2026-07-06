@@ -228,8 +228,10 @@ export function updateList(data) {
       if (map.getZoom() < targetZoom) {
         // Zoom in first, then let the panel's offsetPan own the final centering once the fly settles
         // — the two camera animations used to run concurrently and drop the pin under the right dock.
-        map.flyTo(ll, targetZoom, { animate: !prefersReducedMotion() });
+        // The listener must be registered before flyTo: with animate:false (reduced motion) flyTo
+        // is a synchronous setView, so moveend fires inside the call — a once() added after misses it.
         map.once("moveend", () => openPlacePanel(ll, p.id));
+        map.flyTo(ll, targetZoom, { animate: !prefersReducedMotion() });
       } else {
         openPlacePanel(ll, p.id); // already zoomed in — offsetPan alone re-centers for the dock
       }
