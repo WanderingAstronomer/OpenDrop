@@ -8,7 +8,7 @@ import time
 import uuid
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from .config import settings
 
@@ -75,6 +75,11 @@ def process_and_save(raw: bytes, content_type: str, name: str | None = None) -> 
         # buffer — a highly-compressible bomb can be tiny on disk yet decode to a huge bitmap.
         if img.width * img.height > MAX_SRC_PIXELS:
             return None
+        # Bake the camera's EXIF orientation into the PIXELS before we re-encode (which strips EXIF for
+        # privacy). A portrait phone photo is stored as landscape pixels + an orientation flag; drop the
+        # flag without applying it and the photo displays sideways. exif_transpose rotates it upright,
+        # then the fresh JPEG save drops the now-redundant metadata.
+        img = ImageOps.exif_transpose(img)
         img = img.convert("RGB")
     except Exception:  # noqa: BLE001
         return None

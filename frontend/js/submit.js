@@ -299,9 +299,18 @@ async function doSubmit(panel, btn) {
   try {
     const d = await guard(panel.querySelector(".submit-ts"), btn, { action: "submit" },
       (token) => postSubmit({ ...payload, turnstile_token: token }));
-    if (d.status === "duplicate") toast("Looks like that spot is already on the map — thanks for checking.", "info");
-    else if (d.status === "promoted") toast("Added — your spot is live on the map.", "success");
-    else toast("Got it. Your spot goes live after a quick community check.", "success");
+    // Honest status. A fresh crowd pin lands at confidence 20 (< the 25 'active' gate), so it is
+    // PENDING and not yet on the map — never claim it's "live". And a submission that didn't geocode
+    // has no coordinates at all, so no pin can ever be placed: redirect the user to Drop a pin.
+    if (d.status === "duplicate") {
+      toast("Looks like that spot is already on the map — thanks for checking.", "info");
+    } else if (d.geocoded === false) {
+      toast("We couldn't locate that address — add it with “Drop a pin” so it can appear on the map.", "info");
+    } else if (d.status === "resurfaced" && d.now_active) {
+      toast("Confirmed — that spot is on the map now. Thanks!", "success");
+    } else {
+      toast("Got it — your spot is submitted for a quick community check before it appears.", "success");
+    }
     closePanel(panel);
     app.refresh();
   } catch (e) {
