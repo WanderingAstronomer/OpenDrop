@@ -2,7 +2,7 @@
 // modal. Pin corrections now live in their own drag-to-fix flow (corrections.js), so this
 // module is purely about photos — no map-picking here anymore.
 
-import { fetchImages, reportImage, uploadImage, voteImage } from "./api.js";
+import { deleteImage, fetchImages, reportImage, uploadImage, voteImage } from "./api.js";
 import { mountPotdPlaceholder } from "./potd.js";
 import { app } from "./state.js";
 import { toast } from "./toast.js";
@@ -172,6 +172,7 @@ async function renderGrid(m, locId, includeLow) {
   }
 
   imgs.forEach((im) => {
+    const mine = im.mine && im.status === "pending"; // only your OWN still-unverified photo can be pulled
     const card = document.createElement("div");
     card.className = "ph-card-item";
     card.innerHTML =
@@ -182,9 +183,11 @@ async function renderGrid(m, locId, includeLow) {
       (im.status === "hidden" ? `<span class="ph-badge low">Low-rated</span>` : "") +
       `<span class="ph-score">👍 ${im.upvotes} 👎 ${im.downvotes}</span></div>` +
       `<div class="ts ph-ts"></div>` +
-      `<div class="ph-votes"><button class="btn tiny ph-h" type="button">Helpful</button>` +
+      `<div class="ph-votes${mine ? " has-del" : ""}"><button class="btn tiny ph-h" type="button">Helpful</button>` +
       `<button class="btn tiny ph-u" type="button">Not helpful</button>` +
-      `<button class="btn tiny ph-r" type="button">Report</button></div>` +
+      `<button class="btn tiny ph-r" type="button">Report</button>` +
+      (mine ? `<button class="btn tiny danger ph-del" type="button">Delete</button>` : "") +
+      `</div>` +
       `<div class="ph-report"></div>`;
     attachFallback(card.querySelector("img"));
     const tsHost = card.querySelector(".ph-ts");
@@ -194,6 +197,8 @@ async function renderGrid(m, locId, includeLow) {
     unhelpfulBtn.onclick = () => doVote(im.id, "unhelpful", m, locId, includeLow, tsHost, unhelpfulBtn, helpfulBtn);
     card.querySelector(".ph-r").onclick = () =>
       openImageReport(card.querySelector(".ph-report"), im.id, m, locId, includeLow);
+    const delBtn = card.querySelector(".ph-del");
+    if (delBtn) delBtn.onclick = () => doDelete(im.id, m, locId, includeLow, tsHost, delBtn);
     grid.appendChild(card);
   });
 }
@@ -253,6 +258,37 @@ async function doVote(imgId, vote, m, locId, includeLow, tsHost, btn, otherBtn) 
     else if (e.status === 429) toast("You already rated this photo", "error");
     else if (e.status === 404) toast("That photo is no longer available", "error");
     else toast("Couldn't record your rating", "error");
+  }
+}
+
+// Two-step, guard-gated removal of your OWN still-unverified photo. The first click arms the button
+// as a visible "Delete photo?" confirm for 4 s (no window.confirm); the second click within that
+// window runs the Turnstile-gated DELETE. On success the card vanishes on re-render. The revert
+// timer is stashed on the button itself so two armed Delete buttons don't clobber each other's handle.
+async function doDelete(imgId, m, locId, includeLow, tsHost, btn) {
+  if (!btn.dataset.armed) {
+    btn.dataset.armed = "1";
+    btn.textContent = "Delete photo?";
+    btn.__odDelTimer = setTimeout(() => {
+      delete btn.dataset.armed;
+      btn.textContent = "Delete";
+    }, 4000);
+    return;
+  }
+  clearTimeout(btn.__odDelTimer);
+  delete btn.dataset.armed;
+  btn.textContent = "Delete";
+  try {
+    await guard(tsHost, btn, { action: "delete_photo" }, (token) => deleteImage(imgId, token));
+    toast("Photo removed", "success");
+    renderGrid(m, locId, includeLow); // the deleted card drops out on the fresh fetch
+  } catch (e) {
+    // not_owner is a real 403 here (unlike votes) — keep it distinct from a Turnstile 403.
+    if (e.status === 403 && e.code === "not_owner") toast("You can only delete your own photo", "error");
+    else if (e.status === 403) toast(verifyFailMessage(), "error");
+    else if (e.status === 409) toast("This photo can not be removed once it is confirmed", "error");
+    else if (e.status === 404) toast("That photo is no longer available", "error");
+    else toast("Couldn't remove the photo — try again", "error");
   }
 }
 

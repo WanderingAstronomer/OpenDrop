@@ -174,6 +174,13 @@ export async function maybeShowWelcomeHero(force) {
   author.appendChild(who);
   body.appendChild(author);
 
+  // A plain link to the standalone guide page (navigates away from the map); secondary to "Got it".
+  const guide = document.createElement("a");
+  guide.href = "/guide.html";
+  guide.className = "btn ghost welcome-guide";
+  guide.textContent = "How to use OpenDrop";
+  body.appendChild(guide);
+
   const gotit = document.createElement("button");
   gotit.type = "button";
   gotit.className = "btn primary welcome-ok";

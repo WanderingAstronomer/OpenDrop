@@ -3,6 +3,7 @@ import { ORG_TYPE_LABELS, ORG_TYPES } from "./config.js";
 import { currentPosition } from "./geo.js";
 import { icon } from "./icons.js";
 import { pinDragLatLng, snapPinTo, startPinDrag, stopPinDrag } from "./pindrag.js";
+import { makeSheet } from "./sheet.js";
 import { app } from "./state.js";
 import { toast } from "./toast.js";
 import { guard, verifyFailMessage } from "./turnstile.js";
@@ -13,12 +14,64 @@ let dropped = null; // {lat, lon} when a pin has been placed
 let revTimer = null;
 let discardTimer = null; // pending revert of the armed "Discard entries?" state
 
+// Mobile bottom-sheet plumbing (shared helper, mirrors panel.js/list.js). Desktop keeps the
+// floating .panel card; only <1024px becomes a sheet so the map stays visible for Drop-a-pin.
+let grab = null;      // static drag handle (.submit-grab) — survives the innerHTML wipe on close
+let body = null;      // .submit-body scroll container the form is injected into
+let sheetApi = null;  // 3-snap controller
+let mq = null;        // desktop breakpoint (matches => desktop)
+
 const ADDR_FIELDS = ["#f-line", "#f-city", "#f-state", "#f-zip"];
+// Mobile: pin mode lifts the sheet to HALF (55dvh), leaving the top ~45% of the map visible/
+// draggable — the freshly-dropped pin is panned into that band (mirrors panel.js SHEET_HALF).
+const SHEET_HALF = 0.55;
 
 export function initSubmitPanel() {
   const panel = document.getElementById("submit-panel");
   const btn = document.getElementById("add-btn");
+  grab = panel.querySelector(".submit-grab");
+  body = panel.querySelector(".submit-body");
   btn.onclick = () => (panel.classList.contains("hidden") ? openPanel(panel) : closePanel(panel));
+
+  // Build the sheet ONCE. On desktop the helper is disabled and the .panel card CSS owns the box;
+  // on mobile it drives the snap heights. A swipe below peek routes to the same two-step discard
+  // the Cancel button uses, so a downward flick can never silently drop typed entries.
+  sheetApi = makeSheet(panel, [grab], {
+    content: body,
+    onDismiss: () => {
+      if (requestClose(panel)) return true; // closed (no entries / already armed) — closePanel ran
+      sheetApi.setSnap("half");             // entries present: discard armed, keep the form reachable
+      return true;                          // handled — don't let the helper settle to peek
+    },
+  });
+
+  // Re-seat on breakpoint crossings so a form left open across a rotation isn't stranded.
+  mq = window.matchMedia("(min-width: 1024px)");
+  const onMqChange = (e) => seat(e.matches);
+  if (mq.addEventListener) mq.addEventListener("change", onMqChange);
+  else if (mq.addListener) mq.addListener(onMqChange); // Safari <14
+
+  // Tap the grab to step snaps (guarded against the click a drag release fires), same as list/panel.
+  grab.addEventListener("click", () => {
+    if (panel.dataset.justDragged) return;
+    sheetApi.setSnap(sheetApi.snap() === "half" ? "full" : "half");
+  });
+
+  seat(mq.matches);
+}
+
+// Desktop => the floating card (helper disabled, CSS owns the box). Mobile => the grab shows and,
+// if the form is open, the sheet is enabled at a reachable snap.
+function seat(desktop) {
+  const panel = document.getElementById("submit-panel");
+  if (!panel || !sheetApi) return;
+  grab.hidden = desktop;
+  if (desktop) {
+    sheetApi.disable(); // clears every inline height the helper owned so the card renders as today
+  } else if (!panel.classList.contains("hidden")) {
+    sheetApi.enable();
+    if (sheetApi.snap() === "peek") sheetApi.setSnap("half"); // keep the form usable after a rotation
+  }
 }
 
 function optionsHtml() {
@@ -50,7 +103,7 @@ function onKeydown(e) {
 function openPanel(panel) {
   mode = "address";
   dropped = null;
-  panel.innerHTML = `
+  body.innerHTML = `
     <h2 tabindex="-1">Add a donation location</h2>
     <form id="f-form" novalidate>
       <div class="seg mode-seg" role="radiogroup" aria-label="How to locate it">
@@ -87,6 +140,9 @@ function openPanel(panel) {
       Contributions become open data.</p>`;
   panel.classList.remove("hidden");
   panel.setAttribute("aria-hidden", "false");
+  // Mobile: raise as a bottom sheet at half — the form is usable and the map peeks above it (pin
+  // mode drops it lower). Desktop leaves the card alone (helper stays disabled).
+  if (!mq.matches) { sheetApi.enable(); sheetApi.setSnap("half"); }
 
   const seg = panel.querySelector(".mode-seg");
   seg.querySelectorAll("button").forEach((b) => {
@@ -149,9 +205,19 @@ function setMode(panel, next) {
     hint.hidden = false;
     if (snap) snap.hidden = false;
     if (lead) lead.textContent = "Address (auto-filled — edit if needed)";
+    // Mobile: drop the sheet to half so the map is visible/draggable behind it.
+    if (!mq.matches) sheetApi.setSnap("half");
     const c = app.map.getCenter();
     dropped = { lat: c.lat, lon: c.lng };
     startPinDrag(app.map, c, { label: "Drag to the exact spot", onMove: (ll) => onPinMove(panel, ll) });
+    // Mobile: the map center sits UNDER the half sheet — lift the freshly-dropped pin into the
+    // uncovered top band so it's visible and reachable (mirrors panel.js offsetPan).
+    if (!mq.matches) {
+      const size = app.map.getSize();
+      const p = app.map.latLngToContainerPoint(c);
+      const ty = (size.y * (1 - SHEET_HALF)) / 2;
+      app.map.panBy([0, p.y - ty], { animate: !prefersReducedMotion() });
+    }
     onPinMove(panel, c); // seed the address from the starting point
   } else {
     hint.hidden = true;
@@ -213,13 +279,15 @@ function anyEntry(panel) {
   });
 }
 
-// Two-step discard: with entries in the form, the first Escape/Cancel arms the Cancel button as a
-// visible "Discard entries?" confirm (no window.confirm); the second activation within 4 s closes.
+// Two-step discard: with entries in the form, the first Escape/Cancel/swipe-down arms the Cancel
+// button as a visible "Discard entries?" confirm (no window.confirm); the second activation within
+// 4 s closes. Returns true when it actually closed, false when it only armed the confirm — the
+// sheet's onDismiss uses this to keep the form up (settling back) instead of dropping typed data.
 function requestClose(panel) {
-  if (!anyEntry(panel)) { closePanel(panel); return; }
+  if (!anyEntry(panel)) { closePanel(panel); return true; }
   const cancel = panel.querySelector("#f-cancel");
-  if (!cancel) { closePanel(panel); return; }
-  if (cancel.dataset.armed) { closePanel(panel); return; }
+  if (!cancel) { closePanel(panel); return true; }
+  if (cancel.dataset.armed) { closePanel(panel); return true; }
   cancel.dataset.armed = "1";
   cancel.classList.add("danger");
   cancel.textContent = "Discard entries?";
@@ -229,6 +297,7 @@ function requestClose(panel) {
     cancel.classList.remove("danger");
     cancel.textContent = "Cancel";
   }, 4000);
+  return false;
 }
 
 function closePanel(panel) {
@@ -237,9 +306,11 @@ function closePanel(panel) {
   stopPinDrag(app.map);
   dropped = null;
   mode = "address";
+  if (sheetApi) sheetApi.disable(); // drop the inline sheet heights (no-op on desktop); the card/
+  // shell CSS owns the box again. Idempotent — safe on both breakpoints.
   panel.classList.add("hidden");
   panel.setAttribute("aria-hidden", "true");
-  panel.innerHTML = "";
+  body.innerHTML = ""; // clear only the form — the static grab + .submit-body survive for reopen
   document.removeEventListener("keydown", onKeydown);
   const addBtn = document.getElementById("add-btn");
   if (addBtn) addBtn.focus();
@@ -299,9 +370,9 @@ async function doSubmit(panel, btn) {
   try {
     const d = await guard(panel.querySelector(".submit-ts"), btn, { action: "submit" },
       (token) => postSubmit({ ...payload, turnstile_token: token }));
-    // Honest status. A fresh crowd pin lands at confidence 20 (< the 25 'active' gate), so it is
-    // PENDING and not yet on the map — never claim it's "live". And a submission that didn't geocode
-    // has no coordinates at all, so no pin can ever be placed: redirect the user to Drop a pin.
+    // Honest status. A fresh crowd pin lands at confidence 20 (< the 25 'active' gate) so it stays
+    // PENDING — but it now SHOWS on the map badged "unconfirmed", so say exactly that. A submission
+    // that didn't geocode has no coordinates at all, so no pin can be placed: redirect to Drop a pin.
     if (d.status === "duplicate") {
       toast("Looks like that spot is already on the map — thanks for checking.", "info");
     } else if (d.geocoded === false) {
@@ -309,7 +380,7 @@ async function doSubmit(panel, btn) {
     } else if (d.status === "resurfaced" && d.now_active) {
       toast("Confirmed — that spot is on the map now. Thanks!", "success");
     } else {
-      toast("Got it — your spot is submitted for a quick community check before it appears.", "success");
+      toast("Added — it's on the map now, marked unconfirmed until a neighbor confirms it's there.", "success");
     }
     closePanel(panel);
     app.refresh();

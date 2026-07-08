@@ -563,6 +563,12 @@ body:has(#submit-panel:not(.hidden)) .list-pill { display: none; }
   50% { filter: drop-shadow(0 0 4px rgba(168, 85, 247, 0.95)); }
 }
 
+/* A fresh crowd pin awaiting its first confirm ("unconfirmed"). Its muted dashed slate ring + lighter
+   fill are set on the marker options (js/markers.js) so setStyle-selection restores them; this desaturates
+   the fill a touch more so an unverified spot recedes behind confirmed pins — no pulse, it's the quiet
+   opposite of the proposal pins. Same effect in both themes (like the fixed-violet .odc-pending stroke). */
+.odc-unconfirmed { filter: saturate(0.6); }
+
 /* Drag-pin tooltip */
 .pin-tip { font-weight: 600; }
 
@@ -601,6 +607,16 @@ body:has(#submit-panel:not(.hidden)) .list-pill { display: none; }
 }
 .conf-label { font-size: 16px; font-weight: 700; color: var(--ink); }
 .conf-tally { font-size: 13px; color: var(--ink-2); margin-top: 5px; }
+
+/* Cue on a not-yet-confirmed crowd pin: a soft banner between the status tally and the Still-here/Gone
+   vote, nudging the first visitor to confirm the spot (that confirm vote is what promotes it from
+   pending to active). Themed off --accent-soft/--accent so it reads as actionable in both themes. */
+.pp-unconfirmed {
+  margin: 14px auto 0; max-width: 34ch;
+  font-size: 14px; line-height: 1.4; font-weight: 600; color: var(--ink);
+  background: var(--accent-soft); border: 1px solid var(--accent);
+  border-radius: 10px; padding: 9px 12px;
+}
 
 .vote-q { font-size: 14px; color: var(--ink-2); margin: 18px 0 12px; font-weight: 400; }
 .vote-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -857,7 +873,7 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
    peek / half 55dvh / full 92dvh; the place sheet's peek is the ~72px title-only mini-bar, and
    dragging below peek dismisses); CSS only supplies the shell. */
 @media (max-width: 1023px) {
-  .place-panel, .list-panel {
+  .place-panel, .list-panel, #submit-panel {
     position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto;
     height: max(92px, 13dvh);
     border: 1px solid var(--border); border-bottom: none; border-radius: 22px 22px 0 0;
@@ -865,18 +881,29 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
     transform: none; padding-bottom: env(safe-area-inset-bottom);
     overflow: hidden; /* peek states show only the sheet's top band — clip the rest */
   }
-  .place-panel.dragging, .list-panel.dragging { transition: none; }
+  /* The Add form becomes the SAME 3-snap sheet as the place/list panels (map stays visible for
+     Drop-a-pin). Neutralise the floating-card base rule: zoom breaks sheet.js's px height math
+     (it measures against window.innerHeight), and the /1.25 max-width/height would shrink the
+     full-width sheet — so drop zoom for the WHOLE <1024px range (not just <480px) and clear the
+     caps. Grab flush at top, form scrolls in .submit-body. */
+  #submit-panel {
+    display: flex; flex-direction: column; zoom: 1;
+    max-width: none; max-height: none; padding: 0 0 env(safe-area-inset-bottom);
+  }
+  #submit-panel input, #submit-panel select { font-size: 16px; } /* no iOS focus-zoom on the sheet */
+  .submit-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 16px 16px; }
+  .place-panel.dragging, .list-panel.dragging, #submit-panel.dragging { transition: none; }
   /* .open beats the base visibility:hidden regardless of file order (the base rule sits later) */
   .list-panel.open { visibility: visible; }
   /* one sheet at a time: an open place panel supersedes the list sheet (it returns on close) */
   body:has(.place-panel.open) .list-panel { visibility: hidden; }
   /* drag handles (pointer wiring in sheet.js); the pp-head also drags the place sheet */
   .pp-head { touch-action: none; }
-  .pp-grab, .list-grab {
+  .pp-grab, .list-grab, .submit-grab {
     display: block; flex: none; width: 100%; height: 30px;
     background: none; border: none; cursor: grab; padding: 0; touch-action: none;
   }
-  .pp-grab::before, .list-grab::before {
+  .pp-grab::before, .list-grab::before, .submit-grab::before {
     content: ""; display: block; width: 44px; height: 5px; border-radius: 3px;
     background: var(--border-2); margin: 12px auto 0;
   }
@@ -999,6 +1026,9 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--lo
 .ph-votes .btn { min-height: 40px; flex: 1 1 42%; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
 /* Report drops to its own full-width row so the two vote buttons never clip in a narrow card */
 .ph-votes .ph-r { flex-basis: 100%; }
+/* On your own pending photo a Delete button joins the row; pair it with Report at half-width so all
+   four buttons wrap as two clean rows (Helpful/Not helpful, then Report/Delete) instead of clipping */
+.ph-votes.has-del .ph-r { flex-basis: 42%; }
 .ph-votes .btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 .linklike { background: none; border: none; padding: 6px 4px; font-size: 12px; color: var(--ink-3); cursor: pointer; margin-left: auto; }
 .linklike:hover { color: var(--low); text-decoration: underline; }
@@ -1101,6 +1131,7 @@ img.ph-broken { object-fit: contain; background: var(--surface-2); }
 .welcome-author { margin: 0 0 14px; font-size: var(--fs-small); color: var(--ink-2); }
 .welcome-author a { color: var(--accent); font-weight: 600; text-decoration: none; }
 .welcome-author a:hover { text-decoration: underline; }
+.welcome-guide { width: 100%; margin: 0 0 8px; text-decoration: none; }
 .welcome-ok { width: 100%; }
 @keyframes welcome-in { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
 @keyframes welcome-fade { from { opacity: 0; } to { opacity: 1; } }

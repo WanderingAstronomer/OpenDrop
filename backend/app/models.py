@@ -18,6 +18,11 @@ class ImageVoteIn(BaseModel):
     turnstile_token: Optional[str] = None
 
 
+class ImageDeleteIn(BaseModel):
+    """Turnstile-only body for deleting one's own still-unverified photo (DELETE-with-body)."""
+    turnstile_token: Optional[str] = None
+
+
 class AddressIn(BaseModel):
     # Length caps matter for more than tidiness: these fields are fed to the content-screen regexes
     # (moderation._scan), and an unbounded value is a ReDoS lever. Bound them at the API boundary.

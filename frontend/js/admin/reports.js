@@ -12,6 +12,12 @@ import { toast } from "../toast.js";
 let listEl = null;
 let countEl = null;
 
+// Broadcast the open-report count so main.js can keep the Reports-tab badge in sync — mirrors the
+// admin:auth-lost window-event bridge. Fired on every load and after each resolve/takedown.
+function emitCount(n) {
+  window.dispatchEvent(new CustomEvent("admin:reports-count", { detail: { count: n } }));
+}
+
 function statusPill(text) {
   if (!text) return null;
   return el("span", { class: `pill pill-${text}`, text });
@@ -21,6 +27,7 @@ function dropCard(card) {
   card.remove();
   const remaining = listEl.querySelectorAll(".report-card").length;
   if (countEl) countEl.textContent = remaining ? `${remaining} open` : "";
+  emitCount(remaining);
   if (!remaining) listEl.appendChild(el("div", { class: "empty-state" }, [el("p", { text: "No open reports. ✓" })]));
 }
 
@@ -130,6 +137,7 @@ function renderList(reports) {
   listEl.innerHTML = "";
   listEl.removeAttribute("aria-busy");
   if (countEl) countEl.textContent = reports.length ? `${reports.length} open` : "";
+  emitCount(reports.length);
   if (!reports.length) { listEl.appendChild(el("div", { class: "empty-state" }, [el("p", { text: "No open reports. ✓" })])); return; }
   for (const r of reports) listEl.appendChild(reportCard(r));
 }

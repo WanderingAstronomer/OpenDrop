@@ -97,10 +97,10 @@ export function initChrome() {
   };
   pops.forEach(([btn, pop]) => { if (btn && pop) btn.addEventListener("click", () => togglePop(btn, pop)); });
 
-  // "About" re-opens the welcome card (forced past the shown-once flag); close the menu behind it.
-  if (infoBtn) infoBtn.addEventListener("click", () => { closeAll(); maybeShowWelcomeHero(true); });
+  // The info-circle opens the standalone "How to use OpenDrop" guide page (same tab).
+  if (infoBtn) infoBtn.addEventListener("click", () => { closeAll(); window.location.href = "/guide.html"; });
 
-  // The brand logo is an about button too — tapping it re-opens the welcome card.
+  // The brand logo is the about button — tapping it re-opens the welcome card.
   const brand = document.querySelector(".brand");
   if (brand) brand.addEventListener("click", () => { closeAll(); maybeShowWelcomeHero(true); });
 

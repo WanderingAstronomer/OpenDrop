@@ -3,7 +3,7 @@
 // down on the way out, so the Leaflet mini-maps in the moves view are always created while visible
 // (never zero-sized behind a hidden tab) and are cleaned up on every swap.
 
-import { clearToken, getToken, listPendingMoves, setToken } from "./api.js";
+import { clearToken, getToken, listPendingMoves, listReports, setToken } from "./api.js";
 import * as moves from "./moves.js";
 import * as reports from "./reports.js";
 import * as tools from "./tools.js";
@@ -13,8 +13,24 @@ import { toast } from "../toast.js";
 
 const VIEWS = { moves, reports, tools };
 
-let gate, dash, tokenInput, authError, authSubmit, contentEl, signoutBtn, tabButtons;
+let gate, dash, tokenInput, authError, authSubmit, contentEl, signoutBtn, tabButtons, reportsBadge;
 let current = null;
+
+// Open-report count on the Reports tab. reports.js broadcasts admin:reports-count on every load and
+// after each resolve/takedown; we also fetch once on sign-in so the badge shows before the tab opens.
+function setReportBadge(n) {
+  if (!reportsBadge) return;
+  const count = Number(n) || 0;
+  reportsBadge.textContent = count > 99 ? "99+" : String(count);
+  reportsBadge.hidden = count <= 0;
+}
+
+async function refreshReportBadge() {
+  try {
+    const data = await listReports();
+    setReportBadge((data.reports || []).length);
+  } catch (e) { /* best-effort — the Reports view surfaces the real load error */ }
+}
 
 function showView(name) {
   if (!VIEWS[name]) return;
@@ -33,6 +49,7 @@ function showDashboard() {
   dash.hidden = false;
   signoutBtn.hidden = false;
   showView(current || "moves");
+  refreshReportBadge();
 }
 
 function showGate() {
@@ -40,6 +57,7 @@ function showGate() {
   current = null;
   contentEl.innerHTML = "";
   clearToken();
+  setReportBadge(0);
   dash.hidden = true;
   signoutBtn.hidden = true;
   gate.hidden = false;
@@ -80,11 +98,15 @@ async function boot() {
   authSubmit = document.getElementById("auth-submit");
   contentEl = document.getElementById("content");
   signoutBtn = document.getElementById("signout");
+  reportsBadge = document.getElementById("reports-badge");
   tabButtons = Array.from(document.querySelectorAll(".tab"));
 
   document.getElementById("auth-form").addEventListener("submit", onSignIn);
   signoutBtn.addEventListener("click", () => { toast("Signed out.", "info"); showGate(); });
   tabButtons.forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
+
+  // Reports view broadcasts its open-report count on load and after each resolve/takedown.
+  window.addEventListener("admin:reports-count", (e) => setReportBadge(e.detail && e.detail.count));
 
   // A view whose list call 404s (token went bad / OPERATOR_TOKEN cleared server-side) fires this.
   window.addEventListener("admin:auth-lost", () => {

@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>How to use OpenDrop — OpenDrop</title>
+  <meta name="description" content="A quick guide to OpenDrop: what it is, how to find and verify a clothing-donation drop-off, how to give back to the map, and how your privacy is protected." />
+  <script src="/js/theme-boot.js"></script>
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    /* Scoped to guide.html. Builds on the shared .legal page shell (theme-aware via the same
+       CSS variables the app uses), adding a brand header, stat chips, numbered steps, and cards. */
+    .guide-brand {
+      display: flex; align-items: center; gap: 12px;
+      margin: 0 0 26px; padding: 0 0 22px; border-bottom: 1px solid var(--border);
+    }
+    .guide-brand img { width: 44px; height: 44px; border-radius: 11px; flex: none; }
+    .guide-wordmark { font-size: 22px; font-weight: 700; color: var(--brand); letter-spacing: -0.01em; }
+    .guide-lede { font-size: 18px; line-height: 1.6; color: var(--ink); margin: 0 0 24px; }
+
+    .guide-stats {
+      list-style: none; padding: 0; margin: 0 0 8px;
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+    }
+    .guide-stats li {
+      margin: 0; text-align: center; padding: 16px 8px;
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
+    }
+    .guide-stats b { display: block; font-size: 22px; color: var(--brand); line-height: 1.1; }
+    .guide-stats span {
+      display: block; margin-top: 6px; font-size: 11px; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--ink-3);
+    }
+
+    .guide-eyebrow {
+      font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--brand); font-weight: 700;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      margin: 40px 0 6px;
+    }
+    .guide-eyebrow + h2 { margin-top: 0; }
+
+    .guide-steps { list-style: none; padding: 0; margin: 14px 0 0; counter-reset: step; }
+    .guide-steps li {
+      display: flex; gap: 16px; padding: 18px 0; border-top: 1px solid var(--border); margin: 0;
+    }
+    .guide-steps li::before {
+      counter-increment: step; content: counter(step, decimal-leading-zero);
+      flex: none; width: 38px; height: 38px; border-radius: 50%;
+      border: 1.5px solid var(--brand); color: var(--brand);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    .guide-steps h3 { margin: 2px 0 4px; font-size: 17px; color: var(--ink); }
+    .guide-steps p { margin: 0; color: var(--ink-2); }
+
+    .guide-cards {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0 0;
+    }
+    .guide-cards div {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 16px 18px;
+    }
+    .guide-cards h3 { margin: 0 0 5px; font-size: 15.5px; color: var(--brand); }
+    .guide-cards p { margin: 0; font-size: 14.5px; color: var(--ink-2); }
+
+    .guide-scale {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0 4px;
+    }
+    .guide-scale div {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 14px;
+    }
+    .guide-scale b { display: block; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .guide-scale span { display: block; margin-top: 3px; font-size: 13px; color: var(--ink-3); }
+    .guide-scale .s-low b { color: #c62828; }
+    .guide-scale .s-med b { color: #b45309; }
+    .guide-scale .s-high b { color: #15803d; }
+
+    .guide-license { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 0; }
+    .guide-license li {
+      margin: 0; display: inline-flex; align-items: center; gap: 8px;
+      font-size: 13px; color: var(--ink);
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 12px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    .guide-license b { color: var(--brand); font-weight: 700; }
+
+    .guide-data {
+      margin: 16px 0 0; border: 1px solid var(--border); border-radius: 12px;
+      overflow: hidden; background: var(--surface-2);
+    }
+    .guide-data div {
+      display: grid; grid-template-columns: 190px 1fr; gap: 18px; padding: 13px 18px;
+      border-top: 1px solid var(--border);
+    }
+    .guide-data div:first-child { border-top: none; }
+    .guide-data dt {
+      font-size: 11.5px; letter-spacing: 0.05em; text-transform: uppercase;
+      color: var(--brand); font-weight: 700; line-height: 1.5;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    .guide-data dd { margin: 0; font-size: 14.5px; color: var(--ink-2); }
+
+    .guide-cta {
+      display: inline-block; margin: 24px 0 0; padding: 11px 20px;
+      background: var(--accent); color: var(--on-accent); text-decoration: none;
+      border-radius: var(--r-input, 10px); font-weight: 600; font-size: 15px;
+    }
+    .guide-cta:hover { background: var(--accent-hover); }
+
+    @media (max-width: 560px) {
+      .guide-stats { grid-template-columns: repeat(2, 1fr); }
+      .guide-cards { grid-template-columns: 1fr; }
+      .guide-scale { grid-template-columns: 1fr; }
+      .guide-data div { grid-template-columns: 1fr; gap: 4px; }
+    }
+  </style>
+</head>
+<body class="legal-body">
+  <main class="legal guide">
+    <p class="legal-top"><a href="/">← Back to the map</a></p>
+
+    <header class="guide-brand">
+      <img src="/opendrop-icon.png" alt="" width="128" height="128" />
+      <span class="guide-wordmark">OpenDrop</span>
+    </header>
+
+    <h1>How to use OpenDrop</h1>
+    <p class="guide-lede">OpenDrop is a free, community-owned map of clothing-donation drop-offs
+      across the United States. No account, no app to install, no cost. This is the quick tour:
+      what it is, how to find a spot you can trust, and how to give back to the map.</p>
+
+    <ul class="guide-stats">
+      <li><b>17,000+</b><span>Mapped locations</span></li>
+      <li><b>100%</b><span>Open source</span></li>
+      <li><b>$0</b><span>Cost to use</span></li>
+      <li><b>0</b><span>Accounts required</span></li>
+    </ul>
+
+    <p class="guide-eyebrow">Why it exists</p>
+    <h2>Donation maps go stale. This one heals itself.</h2>
+    <p>Clothing-donation bins move, fill up, get hauled away, or land on a map fifty yards from where
+      they actually sit. Most maps record a location once and then let it drift quietly out of date.</p>
+    <p>OpenDrop treats every pin as a living record. The people who actually stand in front of these
+      bins are the ones who keep them accurate, confirming, correcting, and retiring spots as the real
+      world changes. The result is a map you can trust when you have a trunk full of coats and twenty
+      minutes to spare, and a small, quiet way to keep good textiles out of a landfill and in the hands
+      of someone who needs them.</p>
+
+    <p class="guide-eyebrow">How it works</p>
+    <h2>Real data to start. The community keeps it honest.</h2>
+    <p>OpenDrop does not start from nothing. Every region is seeded from redistributable, first-party
+      sources: OpenStreetMap, The Salvation Army, Planet Aid, USAgain, and Wearable Collections. Those
+      listings are deduplicated with a geographic and fuzzy-name algorithm, so five entries for the
+      same bin collapse into one trustworthy pin.</p>
+    <p>From there, the community takes over. Every pin carries a confidence score you can read at a
+      glance:</p>
+    <div class="guide-scale">
+      <div class="s-low"><b>Low</b><span>Proceed with caution</span></div>
+      <div class="s-med"><b>Medium</b><span>A second look</span></div>
+      <div class="s-high"><b>High</b><span>Well-confirmed</span></div>
+    </div>
+    <p>Every confirm and deny vote updates that score in real time. Newer contributors carry less
+      weight than long-standing ones, so no single motivated person can quietly rewrite the map, and a
+      spot is only ever retired when the evidence that it is gone clearly outweighs the evidence that it
+      is still there. You can also drag a misplaced pin to where it truly belongs (capped so it can
+      never be walked across town, and optionally corroborated by an on-device location check), rate a
+      spot's safety and bin condition, note how many bins are present, and add a photo. A scheduled
+      re-sync with the original sources catches closures on its own, with a circuit breaker that
+      refuses to mass-delete a whole region if a source hiccups.</p>
+
+    <p class="guide-eyebrow">How to use it</p>
+    <h2>From “I have clothes to give” to done, in five steps.</h2>
+    <ol class="guide-steps">
+      <li>
+        <div>
+          <h3>Open the map</h3>
+          <p>Go to <a href="/">opendrop.site</a> in any browser, on any device. Nothing to install,
+            no account to make, no email to hand over.</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3>Find a spot near you</h3>
+          <p>Search a city or address, or tap “locate me.” Filter by what you need: drop bins, thrift
+            stores, donation centers, mutual-aid closets, even resale and consignment if you would
+            rather sell than give.</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3>Trust, but verify</h3>
+          <p>A pin’s color is the community’s confidence in it. Open any pin for hours, address, and
+            one-tap directions before you drive out.</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3>Give back to the map</h3>
+          <p>Confirm a spot is still there, flag one that is gone, drag a misplaced pin to where it
+            belongs, add one that is missing, rate safety and bin condition, or add a photo. Every
+            small act makes the next person’s trip easier.</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3>Drop off your clothes</h3>
+          <p>By the time you head out, you already know how confident the community is that the spot is
+            still there, that it is in good condition, and that it feels safe. Community photos give you
+            an easy way to spot it when you arrive.</p>
+        </div>
+      </li>
+    </ol>
+
+    <p class="guide-eyebrow">Safe by design</p>
+    <h2>Built by a security person, on purpose.</h2>
+    <div class="guide-cards">
+      <div>
+        <h3>No accounts</h3>
+        <p>No login, no profile, no password to leak, because there is nothing about you the project
+          wants to hold.</p>
+      </div>
+      <div>
+        <h3>Your location stays yours</h3>
+        <p>GPS is only ever an on-device yes or no check. The coordinates are never stored, correlated,
+          or sold.</p>
+      </div>
+      <div>
+        <h3>Every edit is verified</h3>
+        <p>A lightweight, privacy-respecting challenge and per-visitor cooldowns keep spam and bad
+          actors out, with no tracking required.</p>
+      </div>
+      <div>
+        <h3>Photos are scrubbed</h3>
+        <p>Uploaded images have their embedded location and camera metadata stripped before they are
+          ever stored.</p>
+      </div>
+      <div>
+        <h3>Nothing to hide</h3>
+        <p>The entire codebase is public. You can read exactly how every one of these promises is
+          kept.</p>
+      </div>
+      <div>
+        <h3>Yours to keep</h3>
+        <p>Export the whole open dataset any time, or run your own private copy end to end.</p>
+      </div>
+    </div>
+
+    <p class="guide-eyebrow">Free, open, transparent</p>
+    <h2>Free to use. Free to fork. Free to keep.</h2>
+    <p>OpenDrop is free forever, and open all the way down. The code is licensed
+      <strong>AGPL-3.0</strong>, so you can read it, run your own copy, and improve it, and anyone who
+      runs a modified version as a service has to share their changes back. The map data is open under
+      <strong>ODbL</strong> and you can export the whole thing whenever you like. Community submissions
+      are released into the public domain. It was built this way deliberately, so it can be trusted,
+      audited, and never quietly enclosed by anyone.</p>
+    <ul class="guide-license">
+      <li><b>Code</b> AGPL-3.0</li>
+      <li><b>Data</b> ODbL-1.0</li>
+      <li><b>Submissions</b> CC0 / Public domain</li>
+    </ul>
+    <p>Transparent is not a marketing word here, it is a promise. We do not collect anyone's data for
+      marketing, we do not profile you, and we never sell or share what little we touch. The one check
+      we run, Cloudflare Turnstile, is a safe and anonymous test that confirms you are a real person
+      without tracking you.</p>
+
+    <p class="guide-eyebrow">Transparency</p>
+    <h2>Exactly how we handle your data</h2>
+    <dl class="guide-data">
+      <div><dt>What we ask you for</dt><dd>Nothing. No account, no name, no email, ever.</dd></div>
+      <div><dt>Bot check · Turnstile</dt><dd>An anonymous “are you human” challenge. No tracking
+        cookies, no cross-site profile, no image labeling.</dd></div>
+      <div><dt>Your IP address</dt><dd>Used only as a salted, one-way hash to rate-limit abuse. Never
+        tied to your identity, never sold.</dd></div>
+      <div><dt>Location &amp; GPS</dt><dd>An on-device yes or no proximity check. Your coordinates never
+        leave your device and are never stored.</dd></div>
+      <div><dt>Photos you upload</dt><dd>Location and camera metadata are stripped before anything is
+        saved.</dd></div>
+      <div><dt>Analytics &amp; marketing</dt><dd>None. No ad trackers, no data brokers, no behavioral
+        profiles.</dd></div>
+      <div><dt>Your recourse</dt><dd>All of it is enforced in public code you can read, export, and
+        self-host.</dd></div>
+    </dl>
+
+    <p class="guide-eyebrow">Thank you</p>
+    <h2>OpenDrop stands on a mountain of other people’s generosity.</h2>
+    <p>No one builds civic infrastructure alone. OpenDrop is possible only because so many communities
+      chose to make their work open, and because so many organizations do the unglamorous work of
+      keeping clothing in circulation: <strong>OpenStreetMap</strong> and its contributors, the
+      <strong>Wikimedia Foundation</strong>, <strong>Planet Aid</strong>, <strong>The Salvation
+      Army</strong>, <strong>USAgain</strong>, <strong>Wearable Collections</strong>, the
+      <strong>American Red Cross</strong>, and the countless local charities, thrift stores, church
+      drives, and mutual-aid closets doing the real work on the ground. And the open-source software it
+      is built on: Leaflet, PostgreSQL &amp; PostGIS, Python &amp; FastAPI, Docker, and the maintainers
+      behind a hundred smaller libraries who never get thanked nearly enough.</p>
+
+    <p><a class="guide-cta" href="/">Open the map →</a></p>
+
+    <p class="legal-foot">
+      Built by <a href="https://wanderingastronomer.github.io" target="_blank" rel="noopener">Andrew Brown</a> ·
+      <a href="https://github.com/WanderingAstronomer/OpenDrop" target="_blank" rel="noopener">Source on GitHub</a> ·
+      <a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> ·
+      <a href="/">Back to the map</a>
+    </p>
+  </main>
+</body>
+</html>

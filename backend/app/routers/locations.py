@@ -33,7 +33,15 @@ async def list_locations(bbox: str | None = None, types: str | None = None,
     js/markers.js): the map loads this feed once and computes clusters/points per view with no server
     round-trip — so there is no cluster mode, no zoom param, no per-pan fetch. `bbox` is OPTIONAL: omit
     it for the whole active set (the map's one-shot load); pass it to filter (tests / scoped callers)."""
-    where = "status = 'active' AND confidence >= %s"
+    # The map is the INCLUSIVE community view: every active pin, PLUS crowd-submitted pins still
+    # 'pending' (below the 25 activation gate) so a freshly-added spot shows up immediately, badged
+    # "unconfirmed", for neighbors to confirm. Membership in the crowd set is tested SET-wise (an
+    # EXISTS against location_sources.source_code='crowd') so the full-table load stays one pass —
+    # no N+1. This deliberately EXCLUDES low-confidence ingest-only pending pins (scraped rows with
+    # no crowd source) as well as merged/hidden (neither status branch matches them).
+    where = ("confidence >= %s AND (status = 'active' OR (status = 'pending' AND EXISTS "
+             "(SELECT 1 FROM location_sources ls WHERE ls.location_id = locations.id "
+             "AND ls.source_code = 'crowd')))")
     params: list = [min_confidence]
     if bbox is not None:
         try:
@@ -58,7 +66,7 @@ async def list_locations(bbox: str | None = None, types: str | None = None,
         # rather than a per-row EXISTS so the full-table load stays one cheap pass; open proposals are
         # rare and ride the partial *_open_ix indexes.
         cur = await conn.execute(
-            f"""SELECT id, name, org_type, confidence, ST_X(geom) AS lon, ST_Y(geom) AS lat,
+            f"""SELECT id, name, org_type, confidence, status, ST_X(geom) AS lon, ST_Y(geom) AS lat,
                        (id IN (SELECT location_id FROM location_corrections WHERE status = 'open'
                                UNION SELECT location_id FROM field_corrections WHERE status = 'open')
                        ) AS has_pending
@@ -71,7 +79,8 @@ async def list_locations(bbox: str | None = None, types: str | None = None,
                 "geometry": {"type": "Point", "coordinates": [r["lon"], r["lat"]]},
                 "properties": {"id": r["id"], "name": r["name"], "org_type": r["org_type"],
                                "bucket": bucket(float(r["confidence"])),
-                               "has_pending": bool(r["has_pending"])},
+                               "has_pending": bool(r["has_pending"]),
+                               "unconfirmed": r["status"] != "active"},
             }
             for r in await cur.fetchall()
         ]

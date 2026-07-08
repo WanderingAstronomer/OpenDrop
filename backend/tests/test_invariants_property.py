@@ -287,8 +287,10 @@ def test_visibility_export_is_active_and_redistributable_subset_of_map(conn, cli
     """For any source set + vote mix:
       * is_redistributable ⟺ the row has ≥1 ingest source;
       * export-view membership ⟺ (active ∧ redistributable);
-      * map membership (min_confidence=0) ⟺ active;
-      * therefore export ⊆ map (an active-but-non-redistributable pin is on the map, off the export).
+      * map membership (min_confidence=0) ⟺ active ∨ (pending ∧ has a crowd source) — the map is the
+        inclusive community view, so crowd-submitted pending pins show (badged unconfirmed) but
+        ingest-only pending pins do not;
+      * therefore export ⊆ map (export requires active, and every active pin is on the map).
     """
     lat, lon = 46.10, -110.10
     loc = _new_loc(conn, lat, lon, tuple(srcs))
@@ -308,7 +310,12 @@ def test_visibility_export_is_active_and_redistributable_subset_of_map(conn, cli
     feats = client.get("/api/locations",
                        params={"bbox": _VBBOX, "cluster": "off", "min_confidence": 0}).json()
     on_map = loc in {f["properties"]["id"] for f in feats["features"]}
-    assert on_map == (r["status"] == "active"), (r["status"], on_map)
+    has_crowd = "crowd" in srcs
+    expect_map = r["status"] == "active" or (r["status"] == "pending" and has_crowd)
+    assert on_map == expect_map, (r["status"], has_crowd, on_map)
+    if on_map:
+        prop = next(f["properties"] for f in feats["features"] if f["properties"]["id"] == loc)
+        assert prop["unconfirmed"] == (r["status"] != "active")
     assert not (in_export and not on_map), "export must be a subset of the map"
 
 

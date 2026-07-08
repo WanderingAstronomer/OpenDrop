@@ -77,6 +77,13 @@ html, body { height: auto; min-height: 100%; overflow: auto; }
 .tab:hover { color: var(--ink); background: var(--surface); }
 .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 .tab:focus-visible { outline: none; box-shadow: var(--focus); }
+/* Open-report count on the Reports tab — the only alert surface (no email); reuses the pill radius. */
+.tab-badge {
+  display: inline-flex; align-items: center; justify-content: center; margin-left: 7px;
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--r-pill);
+  background: var(--low); color: #fff; font-size: 12px; font-weight: 700; line-height: 1;
+  vertical-align: 1px;
+}
 
 .view-head { display: flex; align-items: center; gap: 12px; margin: 4px 0 6px; }
 .view-head h2 { margin: 0; font-size: 20px; color: var(--ink); }

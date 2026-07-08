@@ -168,6 +168,36 @@ def test_map_shows_active_non_redistributable_but_export_excludes_it(client, con
 
 
 @requires_db
+def test_map_shows_crowd_pending_but_not_ingest_pending(client, conn):
+    """The map is the INCLUSIVE community view: it shows every active pin PLUS crowd-submitted pins
+    still below the 25 activation gate (badged unconfirmed=true), so a freshly-added spot appears
+    immediately for neighbors to confirm. Low-confidence INGEST-only pending pins (scraped rows with
+    no crowd source) stay OFF the map. This pins all three cases so the feed can't silently drift.
+
+    Isolated in an empty Montana bbox so the query returns only this fixture's pins."""
+    lat, lon = 46.30, -110.30
+    # (1) Crowd-submitted pending: crowd source -> confidence 20 -> status stays 'pending'.
+    crowd = _mk_location(conn, "crowd-pending", lat=lat, lon=lon, sources=("crowd",), org_type="drop_bin")
+    assert _status(conn, crowd) == "pending"
+    # (2) Ingest-only pending: a scraped (osm) pin forced back to 'pending' with NO crowd source.
+    ingest = _mk_location(conn, "ingest-pending", lat=lat + 0.01, lon=lon, sources=("osm",))
+    conn.execute("UPDATE locations SET status='pending' WHERE id=%s", (ingest,))
+    conn.commit()
+    # (3) Active: normal community-visible pin.
+    active = _mk_location(conn, "active-pin", lat=lat + 0.02, lon=lon, sources=("salvation_army",))
+    assert _status(conn, active) == "active"
+
+    feats = client.get("/api/locations", params={"bbox": "-110.4,46.2,-110.2,46.4",
+                                                  "min_confidence": 0}).json()["features"]
+    props = {f["properties"]["id"]: f["properties"] for f in feats}
+    assert crowd in props and props[crowd]["unconfirmed"] is True, \
+        "crowd-submitted pending pin must appear, flagged unconfirmed"
+    assert ingest not in props, "ingest-only pending pin must NOT appear on the map"
+    assert active in props and props[active]["unconfirmed"] is False, \
+        "active pin must appear, flagged unconfirmed=false"
+
+
+@requires_db
 def test_submit_missing_token_403(client):
     r = client.post("/api/locations", json={"name": "X", "org_type": "drop_bin", "address": {"city": "Columbus"}})
     assert r.status_code == 403

@@ -9,22 +9,24 @@ from .. import db
 from ..config import settings
 from ..deps import client_ip
 from ..imageproc import media_total_bytes, process_and_save, unlink_media
-from ..models import ImageVoteIn
+from ..models import ImageDeleteIn, ImageVoteIn
 from ..security import ip_hash, token_hash, verify_turnstile
 
 router = APIRouter()
 
 
 @router.get("/locations/{loc_id}/images")
-async def list_images(loc_id: int, include_low: bool = False):
+async def list_images(loc_id: int, request: Request, include_low: bool = False):
     """Photos for a location. Default: vouched ('visible') only, best first. include_low=true
     also returns 'pending' (new/unverified) and 'hidden' (down-voted) for the gallery toggle.
-    Operator-removed photos (removed_at set) are NEVER returned by either mode."""
+    Operator-removed photos (removed_at set) are NEVER returned by either mode. Each image carries
+    `mine` (the caller submitted it) so the UI can offer a delete-my-photo action."""
+    iph = ip_hash(client_ip(request))
     statuses = ["pending", "visible", "hidden"] if include_low else ["visible"]
     async with db.pool.connection() as conn:
         cur = await conn.execute(
             """SELECT id, path, score, upvotes, downvotes, status, applied, apply_state,
-                      (suggested_lat IS NOT NULL) AS is_correction
+                      (suggested_lat IS NOT NULL) AS is_correction, submitter_ip_hash
                FROM location_images
                WHERE location_id = %s AND status = ANY(%s) AND removed_at IS NULL
                ORDER BY score DESC, created_at DESC""",
@@ -35,7 +37,7 @@ async def list_images(loc_id: int, include_low: bool = False):
         {"id": r["id"], "url": f"/media/{r['path']}", "score": r["score"],
          "upvotes": r["upvotes"], "downvotes": r["downvotes"], "status": r["status"],
          "is_correction": r["is_correction"], "applied": r["applied"],
-         "apply_state": r["apply_state"]}
+         "apply_state": r["apply_state"], "mine": r["submitter_ip_hash"] == iph}
         for r in rows]}
 
 
@@ -177,3 +179,33 @@ async def vote_image(img_id: int, body: ImageVoteIn, request: Request):
         r = await cur.fetchone()
     return {"id": img_id, "score": r["score"], "upvotes": r["upvotes"], "downvotes": r["downvotes"],
             "status": r["status"], "applied": r["applied"]}
+
+
+@router.delete("/images/{img_id}")
+async def delete_image(img_id: int, body: ImageDeleteIn, request: Request):
+    """Delete your own photo while it is still unverified. Only the submitter may delete, and only
+    while the photo is 'pending' AND has not applied a pin correction — once it's vouched (visible),
+    hidden, or its correction moved the pin, it belongs to the community and is operator-only. The
+    row is removed (image_votes cascade) and the media file is unlinked."""
+    ip = client_ip(request)
+    if not await verify_turnstile(body.turnstile_token, ip):
+        raise HTTPException(403, {"code": "turnstile_failed", "message": "Turnstile verification failed"})
+
+    iph = ip_hash(ip)
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            await conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"img{img_id}:{iph}",))
+            cur = await conn.execute(
+                "SELECT submitter_ip_hash, status, applied, path FROM location_images "
+                "WHERE id = %s AND removed_at IS NULL FOR UPDATE", (img_id,))
+            row = await cur.fetchone()
+            if row is None:
+                raise HTTPException(404, {"code": "not_found", "message": "image not found"})
+            if row["submitter_ip_hash"] != iph:
+                raise HTTPException(403, {"code": "not_owner", "message": "you can only delete your own photo"})
+            if row["status"] != "pending" or row["applied"]:
+                raise HTTPException(409, {"code": "not_pending",
+                                          "message": "only an unverified photo can be deleted"})
+            await conn.execute("DELETE FROM location_images WHERE id = %s", (img_id,))
+        unlink_media(row["path"])
+    return {"deleted": True}

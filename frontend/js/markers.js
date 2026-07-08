@@ -7,9 +7,9 @@ import { bubbleSize, computeDiff, expandBbox, formatCount, prefersReducedMotion,
 // The whole active set is loaded once (main.js) and clustered per view here: clusters sit at the
 // weighted CENTROID of their members and merge by proximity as you zoom, so there is no server grid,
 // no fixed lattice, and one consistent behaviour at every zoom. Individual pins draw on a shared
-// canvas (one paint pass, flat hit-testing); the few pins with an open community proposal draw on a
-// shared SVG renderer so their .odc-pending keyframe (an animated SVG filter) still runs — canvas has
-// no per-marker DOM node to animate.
+// canvas (one paint pass, flat hit-testing); the few pins with an open community proposal (.odc-pending)
+// or a not-yet-confirmed crowd submission (.odc-unconfirmed) draw on a shared SVG renderer so their
+// per-marker CSS class reaches a real DOM node — canvas has no per-marker node to style/animate.
 
 let map = null;
 let index = null;        // the Supercluster index (rebuilt on load / type-filter change)
@@ -98,18 +98,28 @@ function makePointMarker(f) {
   const [lon, lat] = f.geometry.coordinates;
   const p = f.properties;
   const pending = !!p.has_pending;
+  const unconfirmed = !!p.unconfirmed;
   // Pending pins carry their violet stroke as their BASE style (so setStyle-selection can override it
-  // and restore it); the keyframe still animates their filter on the SVG node.
-  const base = pending ? { color: "#a855f7", weight: 2 } : { color: "#ffffff", weight: 2 };
+  // and restore it); the keyframe still animates their filter on the SVG node. A not-yet-confirmed
+  // crowd pin reads DE-EMPHASISED — a muted dashed slate ring + a lighter fill — so it clearly isn't
+  // verified yet while staying tappable. An open proposal (violet, "needs a vote") outranks the
+  // unconfirmed styling for the rare pin carrying both. Both non-plain states draw on the SVG
+  // renderer so their className reaches a real <path> the CSS can style.
+  let base;
+  if (pending) base = { color: "#a855f7", weight: 2 };
+  else if (unconfirmed) base = { color: "#94a3b8", weight: 2, dashArray: "3 3" };
+  else base = { color: "#ffffff", weight: 2 };
   const marker = L.circleMarker([lat, lon], {
-    renderer: pending ? svgRenderer : canvasRenderer,
-    radius: 7, fillColor: bucketColor(p.bucket), fillOpacity: 1,
+    renderer: (pending || unconfirmed) ? svgRenderer : canvasRenderer,
+    radius: 7, fillColor: bucketColor(p.bucket),
+    fillOpacity: (unconfirmed && !pending) ? 0.55 : 1,
     ...base,
-    className: pending ? "odc-pending" : "", // reaches the SVG <path> only; canvas ignores className
+    className: pending ? "odc-pending" : (unconfirmed ? "odc-unconfirmed" : ""), // SVG <path> only
   });
   marker.__odId = p.id;
   marker.__odBase = base;
   marker.__odPending = pending; // so a has_pending flip on a survivor can be detected and migrated
+  marker.__odUnconfirmed = unconfirmed; // ditto for a confirm that promotes pending -> active
   marker.on("click", () => {
     select(p.id, marker);
     openPlacePanel(marker.getLatLng(), p.id);
@@ -174,14 +184,16 @@ export function renderView(bbox, zoom) {
   bubbles.forEach((b) => clusterLayer.addLayer(b));
 
   // Individual pins: diff by id, reuse survivors, build/remove only the delta — and migrate any pin
-  // whose has_pending flipped between the canvas and svg renderers (computeDiff keys on id alone and
-  // would otherwise treat that as an untouched survivor).
+  // whose has_pending OR unconfirmed flipped (either switches the canvas<->svg renderer and the base
+  // stroke/fill). computeDiff keys on id alone, so without this a promoted crowd pin would stay grey
+  // (and a resolved proposal stay violet) until a full rebuild.
   const { gone, fresh } = computeDiff(idMap, points);
   const goneNow = gone.slice();
   const freshNow = fresh.slice();
   points.forEach((f) => {
     const m = idMap.get(f.properties.id);
-    if (m && m.__odPending !== !!f.properties.has_pending) { goneNow.push(m); freshNow.push(f); }
+    if (m && (m.__odPending !== !!f.properties.has_pending
+              || m.__odUnconfirmed !== !!f.properties.unconfirmed)) { goneNow.push(m); freshNow.push(f); }
   });
   if (goneNow.length) {
     goneNow.forEach((m) => pointLayer.removeLayer(m));

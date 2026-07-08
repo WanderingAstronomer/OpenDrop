@@ -79,6 +79,20 @@ export async function uploadImage(locId, file, token, suggested) {
   return d;
 }
 
+// Delete the caller's own still-unverified photo. DELETE carries a JSON body so the Turnstile token
+// rides along like every other write (mirror of deleteAttribute). Backend only allows it while the
+// photo is pending and only for the original uploader (IP-hash match).
+export async function deleteImage(imgId, token) {
+  const r = await fetch(`${API}/images/${imgId}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ turnstile_token: token }),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw { status: r.status, ...d };
+  return d;
+}
+
 // --- Community pin corrections + signals ---
 
 export async function postCorrection(locId, payload) {

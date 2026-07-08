@@ -85,7 +85,7 @@
              stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
       </button>
       <div id="menu-rail" class="menu-rail" role="menu" aria-label="Map tools" hidden>
-        <button id="info-btn" class="bar-btn rail-btn" type="button" role="menuitem" aria-label="About OpenDrop" title="About OpenDrop">
+        <button id="info-btn" class="bar-btn rail-btn" type="button" role="menuitem" aria-label="How to use OpenDrop" title="How to use OpenDrop">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 11.2v5"></path><circle cx="12" cy="7.6" r="0.7" fill="currentColor" stroke="none"></circle></svg>
         </button>
         <button id="legend-btn" class="bar-btn rail-btn" type="button" role="menuitem" aria-haspopup="true"
@@ -213,8 +213,14 @@
   </div>
 
   <!-- Non-modal by design: pin mode requires interacting with the map behind the panel, so
-       aria-modal would be a lie to screen readers (the ARIA-truthfulness rule). -->
-  <div id="submit-panel" class="panel hidden" role="dialog" aria-label="Add a donation location" aria-hidden="true"></div>
+       aria-modal would be a lie to screen readers (the ARIA-truthfulness rule). Desktop: a
+       floating card (.panel). Mobile (<1024px): the shared 3-snap bottom sheet (js/sheet.js) so
+       the map stays visible for Drop-a-pin. The grab + .submit-body are STATIC children (sheet.js
+       keeps its handle/content refs across reopen); submit.js injects/clears only .submit-body. -->
+  <div id="submit-panel" class="panel hidden" role="dialog" aria-label="Add a donation location" aria-hidden="true">
+    <button class="submit-grab sheet-grab" type="button" aria-label="Expand or collapse the form" hidden></button>
+    <div class="submit-body"></div>
+  </div>
   <div id="photo-modal" class="photo-modal" aria-hidden="true"></div>
   <div id="toast-host" class="toast-host" role="status" aria-live="polite"></div>
 

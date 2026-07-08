@@ -405,6 +405,8 @@ export async function openPlacePanel(latlng, id) {
     </div>` : ""}
     <div class="pp-status">
       <div class="conf-slot">${confHtml(d)}</div>
+      ${d.status === "pending" && (d.sources || []).some((s) => s.code === "crowd")
+        ? `<p class="pp-unconfirmed">Unconfirmed — be the first to confirm this spot is here.</p>` : ""}
       <div class="vote-area"></div>
     </div>
     <div class="pp-changes">
