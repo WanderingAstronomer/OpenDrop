@@ -1,8 +1,40 @@
+import re
+
 import httpx
 
 from .config import settings
 
 UA = "OpenDrop/0.1 (civic open-data map; +https://github.com/WanderingAstronomer/OpenDrop)"
+
+# USPS secondary-unit designators (Appendix C2, common subset). Nominatim's STRUCTURED `street`
+# matcher is brittle: appending a unit — "3990 Broadway Suite 100" — makes it return ZERO results
+# for an address that resolves cleanly without it (verified against live Nominatim). We geocode with
+# the unit stripped; the caller keeps the full line for storage/display. The unit never contributes
+# to the coordinate, so dropping it only ever helps.
+_UNIT_DESIGNATORS = (
+    "apt", "apartment", "unit", "suite", "ste", "bldg", "building", "fl", "floor",
+    "rm", "room", "dept", "department", "lot", "trlr", "trailer", "spc", "space",
+    "hangar", "hngr", "slip", "pier", "stop", "no", "num", "number",
+)
+# A trailing "<sep> DESIGNATOR [value]" clause (e.g. " Suite 100", ", Apt 2B", " Unit").
+_UNIT_RE = re.compile(
+    r"[\s,]+(?:" + "|".join(_UNIT_DESIGNATORS) + r")\b\.?\s*[\w-]*\s*$",
+    re.IGNORECASE,
+)
+# A trailing "#3" / "# 3" clause, which the keyword list can't express.
+_HASH_UNIT_RE = re.compile(r"[\s,]*#\s*[\w-]+\s*$")
+
+
+def strip_unit(line: str | None) -> str | None:
+    """Drop a trailing secondary-unit clause (Apt/Suite/Unit/#…) from a street line for geocoding.
+    Returns the cleaned street, or the ORIGINAL if stripping would leave it empty (so a line that is
+    *only* a unit still gets its shot at the free-text fallback rather than becoming blank)."""
+    if not line:
+        return line
+    s = _HASH_UNIT_RE.sub("", line)
+    s = _UNIT_RE.sub("", s)
+    s = s.strip()
+    return s or line
 
 # Tiny in-process cache for free-text search (respects Nominatim's no-heavy-use policy).
 _SEARCH_CACHE: dict[str, list] = {}
@@ -66,19 +98,8 @@ async def reverse(lat: float, lon: float) -> dict | None:
             "postal_code": addr.get("postcode"), "display_name": data.get("display_name")}
 
 
-async def geocode(line=None, city=None, state=None, postal_code=None) -> tuple[float, float] | None:
-    """Structured Nominatim geocode → (lat, lon) or None. Never raises."""
-    params = {"format": "jsonv2", "limit": "1", "countrycodes": "us"}
-    if line:
-        params["street"] = line
-    if city:
-        params["city"] = city
-    if state:
-        params["state"] = state
-    if postal_code:
-        params["postalcode"] = postal_code
-    if len(params) == 3:  # only the 3 constant params => nothing to geocode
-        return None
+async def _query(params: dict) -> tuple[float, float] | None:
+    """One Nominatim request → (lat, lon) of the first hit, or None. Never raises."""
     try:
         async with httpx.AsyncClient(timeout=15, headers={"User-Agent": UA}) as client:
             resp = await client.get(settings.nominatim_url, params=params)
@@ -90,5 +111,36 @@ async def geocode(line=None, city=None, state=None, postal_code=None) -> tuple[f
         return None
     try:
         return float(data[0]["lat"]), float(data[0]["lon"])
-    except (KeyError, ValueError, IndexError):
+    except (KeyError, ValueError, IndexError, TypeError):
         return None
+
+
+async def geocode(line=None, city=None, state=None, postal_code=None) -> tuple[float, float] | None:
+    """Structured Nominatim geocode, with a free-text fallback → (lat, lon) or None. Never raises.
+
+    Coordinates-first: a geocode miss is meant to be rare, because two brittleness traps are handled:
+      1. a trailing unit (Apt/Suite/#) is stripped from `street` — Nominatim's structured matcher
+         returns nothing for an otherwise-valid address when a unit is appended;
+      2. if the structured query still finds nothing, we retry ONCE as a free-text `q` search, which
+         is far more forgiving of field ordering and abbreviations. The extra call only fires on a
+         miss, so the common (clean-address) path is still a single request."""
+    street = strip_unit(line)
+    params = {"format": "jsonv2", "limit": "1", "countrycodes": "us"}
+    if street:
+        params["street"] = street
+    if city:
+        params["city"] = city
+    if state:
+        params["state"] = state
+    if postal_code:
+        params["postalcode"] = postal_code
+    if len(params) == 3:  # only the 3 constant params => nothing to geocode
+        return None
+    hit = await _query(params)
+    if hit:
+        return hit
+    # Free-text fallback: reassemble the (unit-stripped) parts into one `q` string.
+    q = ", ".join(p for p in (street, city, state, postal_code) if p)
+    if not q:
+        return None
+    return await _query({"format": "jsonv2", "limit": "1", "countrycodes": "us", "q": q})

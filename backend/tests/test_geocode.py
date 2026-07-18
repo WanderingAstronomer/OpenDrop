@@ -282,6 +282,90 @@ def test_geocode_sends_only_provided_fields(monkeypatch):
     assert params["limit"] == "1" and params["countrycodes"] == "us"
 
 
+# ------------------------------------------------------------- strip_unit() + free-text fallback
+def test_strip_unit_drops_trailing_unit_designators():
+    """A trailing Apt/Suite/Unit/# clause is removed; the bare street survives untouched."""
+    cases = {
+        "3990 Broadway Suite 100": "3990 Broadway",
+        "3990 Broadway Ste 100": "3990 Broadway",
+        "3990 Broadway Apt 2B": "3990 Broadway",
+        "3990 Broadway Unit B": "3990 Broadway",
+        "3990 Broadway, Apt 4": "3990 Broadway",
+        "3990 Broadway #3": "3990 Broadway",
+        "3990 Broadway # 3": "3990 Broadway",
+        "123 Main St": "123 Main St",          # no unit -> unchanged
+        "123 Main Street": "123 Main Street",   # 'Street' is not a unit word
+    }
+    for raw, expected in cases.items():
+        assert geocode.strip_unit(raw) == expected, raw
+
+
+def test_strip_unit_keeps_original_when_only_a_unit():
+    """A line that is *only* a unit would strip to empty — keep the original so the caller can still
+    try the free-text fallback rather than sending a blank street."""
+    assert geocode.strip_unit("Apt 4") == "Apt 4"
+    assert geocode.strip_unit(None) is None
+    assert geocode.strip_unit("") == ""
+
+
+def test_geocode_strips_unit_before_structured_query(monkeypatch):
+    """The `street` param sent to Nominatim is the unit-stripped street, not the raw line."""
+    holder = _install(monkeypatch, payload=[{"lat": "40.0", "lon": "-83.0"}])
+    _run(geocode.geocode(line="3990 Broadway Suite 100", city="Grove City", state="OH"))
+    _, params = holder["client"].calls[0]
+    assert params["street"] == "3990 Broadway"   # 'Suite 100' stripped for the query
+
+
+def _seq_client(monkeypatch, calls):
+    """Install an httpx stub that records each request's params and answers STRUCTURED queries
+    (no `q`) with [] but FREE-TEXT queries (has `q`) with a hit — so we exercise the fallback."""
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, params=None):
+            calls.append(params)
+            hit = [{"lat": "40.7", "lon": "-82.1"}] if "q" in params else []
+            return _FakeResp(hit)
+
+    monkeypatch.setattr(geocode.httpx, "AsyncClient", lambda *a, **k: Client())
+
+
+def test_geocode_falls_back_to_freetext_when_structured_misses(monkeypatch):
+    calls = []
+    _seq_client(monkeypatch, calls)
+    out = _run(geocode.geocode(line="500 Nowhere Rd", city="Columbus", state="OH"))
+    assert out == (40.7, -82.1)
+    assert len(calls) == 2                              # structured missed -> free-text ran
+    assert "street" in calls[0] and "q" not in calls[0]  # 1st call was structured
+    assert "q" in calls[1] and "street" not in calls[1]  # 2nd call was free-text
+    assert calls[1]["q"] == "500 Nowhere Rd, Columbus, OH"
+
+
+def test_geocode_skips_fallback_when_structured_hits(monkeypatch):
+    """A structured hit returns immediately — no wasted second (free-text) request."""
+    calls = []
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, params=None):
+            calls.append(params)
+            return _FakeResp([{"lat": "39.9", "lon": "-83.1"}])
+
+    monkeypatch.setattr(geocode.httpx, "AsyncClient", lambda *a, **k: Client())
+    out = _run(geocode.geocode(line="1 Main St", city="Columbus", state="OH"))
+    assert out == (39.9, -83.1)
+    assert len(calls) == 1 and "q" not in calls[0]
+
+
 # --------------------------------------------------------------------------- property-based
 if _HAS_HYP:
     @hyp_settings(max_examples=80, deadline=None,

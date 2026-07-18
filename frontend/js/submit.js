@@ -1,4 +1,4 @@
-import { postSubmit, reverseGeocode } from "./api.js";
+import { geosearch, postSubmit, reverseGeocode } from "./api.js";
 import { ORG_TYPE_LABELS, ORG_TYPES } from "./config.js";
 import { currentPosition } from "./geo.js";
 import { icon } from "./icons.js";
@@ -164,6 +164,11 @@ function openPanel(panel) {
   panel.querySelector("#f-cancel").onclick = () => requestClose(panel);
   panel.querySelector("#f-snap").onclick = () => snapToGps(panel);
 
+  // Type-aware default: a donation bin has no civic street address — its anchor is a coordinate.
+  // Picking "Donation bin" before typing any address steers to Drop-a-pin; a user who's already
+  // entered an address is left alone (some bins do sit at a known address).
+  panel.querySelector("#f-type").addEventListener("change", (e) => suggestPinForType(panel, e.target.value));
+
   // Hand-edited address fields are sacred: mark them dirty so the pin-drag geocoder never
   // overwrites a correction the user typed in themselves.
   ADDR_FIELDS.forEach((s) => {
@@ -187,6 +192,16 @@ function openPanel(panel) {
 
   document.addEventListener("keydown", onKeydown);
   panel.querySelector("#f-name").focus();
+}
+
+// Bins are coordinate-anchored, not address-anchored: selecting "Donation bin" with an empty
+// address flips to Drop-a-pin so the user places the exact spot instead of hunting for a street
+// number that may not exist. Guarded so it never overwrites an address the user has begun typing.
+function suggestPinForType(panel, type) {
+  if (type !== "drop_bin" || mode !== "address") return;
+  if (["#f-line", "#f-city", "#f-state"].some((s) => val(panel, s))) return;
+  setMode(panel, "pin");
+  toast("Donation bins usually have no street address — drop a pin on the exact spot.", "info");
 }
 
 function setMode(panel, next) {
@@ -371,12 +386,16 @@ async function doSubmit(panel, btn) {
     const d = await guard(panel.querySelector(".submit-ts"), btn, { action: "submit" },
       (token) => postSubmit({ ...payload, turnstile_token: token }));
     // Honest status. A fresh crowd pin lands at confidence 20 (< the 25 'active' gate) so it stays
-    // PENDING — but it now SHOWS on the map badged "unconfirmed", so say exactly that. A submission
-    // that didn't geocode has no coordinates at all, so no pin can be placed: redirect to Drop a pin.
+    // PENDING — but it now SHOWS on the map badged "unconfirmed", so say exactly that.
+    if (d.geocoded === false) {
+      // Coordinates-first: a geocode miss is NOT a dead-end. Keep everything the user typed, move
+      // the map near the city they entered, and flip to Drop-a-pin so they place the exact spot —
+      // the pin is authoritative on resubmit, no address lookup needed. Panel stays open.
+      await fallbackToPin(panel);
+      return;
+    }
     if (d.status === "duplicate") {
       toast("Looks like that spot is already on the map — thanks for checking.", "info");
-    } else if (d.geocoded === false) {
-      toast("We couldn't locate that address — add it with “Drop a pin” so it can appear on the map.", "info");
     } else if (d.status === "resurfaced" && d.now_active) {
       toast("Confirmed — that spot is on the map now. Thanks!", "success");
     } else {
@@ -390,4 +409,22 @@ async function doSubmit(panel, btn) {
     else if (e.status === 422) toast(e.error?.message || "We can't accept this as written — please revise the name or address and try again.", "error");
     else toast("Couldn't add this spot — try again", "error");
   }
+}
+
+// The address couldn't be pinpointed (rural spot, a bin with no civic address, a Nominatim gap).
+// Rather than dead-end and throw away what the user typed, switch to Drop-a-pin WITHOUT closing:
+// recenter the map near the city they entered so the seeded pin lands close, flip to pin mode
+// (which drops a draggable pin at the map center and reverse-geocodes without clobbering their
+// typed address), and tell them what to do. On resubmit the pin is authoritative — no lookup.
+async function fallbackToPin(panel) {
+  const city = val(panel, "#f-city");
+  const state = val(panel, "#f-state");
+  const q = [city, state].filter(Boolean).join(", ");
+  if (q) {
+    const hits = await geosearch(q);
+    if (hits[0]) app.map.setView([hits[0].lat, hits[0].lon], 15, { animate: !prefersReducedMotion() });
+  }
+  if (mode !== "pin") setMode(panel, "pin"); // seeds a draggable pin at the (now city-centered) map
+  if (!mq.matches && sheetApi) sheetApi.setSnap("half"); // keep the sheet reachable on mobile
+  toast("We couldn't pinpoint that address — drag the pin to the exact spot, then add it again.", "info");
 }

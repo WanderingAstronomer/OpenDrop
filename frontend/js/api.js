@@ -208,3 +208,18 @@ export async function reverseGeocode(lat, lon) {
     return null;
   }
 }
+
+// Free-text place/address search (Nominatim proxy). Powers the map search box AND the add-form's
+// "couldn't pinpoint that address → drop a pin" fallback, where we use the first hit to recenter the
+// map near the city the user typed before seeding a draggable pin. Soft-fails to [] on any error.
+export async function geosearch(q) {
+  const query = (q || "").trim();
+  if (query.length < 3) return []; // the endpoint requires q>=3; skip the round-trip below that
+  try {
+    const r = await fetch(`${API}/geosearch?q=${encodeURIComponent(query)}`);
+    if (!r.ok) return [];
+    return (await r.json()).results || [];
+  } catch (e) {
+    return [];
+  }
+}
